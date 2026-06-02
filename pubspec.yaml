@@ -1,0 +1,28 @@
+name: smart_electric
+description: "A new Flutter project."
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  dio: ^5.4.0
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.2
+  wifi_scan: ^0.4.1
+  permission_handler: ^11.3.0
+  image_picker: ^1.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
