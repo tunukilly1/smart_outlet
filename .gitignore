@@ -46,3 +46,4 @@ app.*.map.json
 
 # Project exclude paths
 /android/build/
+build/web/

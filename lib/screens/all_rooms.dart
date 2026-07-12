@@ -180,7 +180,7 @@ class _AllRoomsScreenState extends State<AllRoomsScreen> {
                 ),
                 Container(width: 1, height: 30, color: borderColor),
                 _SummaryItem(
-                  value: _service.totalKwhToday.toStringAsFixed(1),
+                  value: _service.totalKwh.toStringAsFixed(1),
                   label: 'kWh Today',
                   color: AppColors.amber,
                 ),

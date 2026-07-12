@@ -37,7 +37,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void initState() {
     super.initState();
     final auth = AuthService();
-    _nameController = TextEditingController(text: auth.fullName);
+    _nameController = TextEditingController(text: auth.username);
     _emailController = TextEditingController(text: auth.email);
     _phoneController = TextEditingController(text: auth.phone);
     _locationController = TextEditingController(text: auth.location);
@@ -54,31 +54,33 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   void _save() async {
     setState(() => _isSaving = true);
-    await Future.delayed(const Duration(milliseconds: 800));
 
-    // Save to AuthService
-    final auth = AuthService();
-    final nameParts = _nameController.text.trim().split(' ');
-    final firstName = nameParts.isNotEmpty ? nameParts[0] : '';
-    final lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+    try {
+      await AuthService().updateProfile(
+        username: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
+        location: _locationController.text.trim(),
+      );
 
-    auth.updateProfile(
-      firstName: firstName,
-      lastName: lastName,
-      email: _emailController.text,
-      phone: _phoneController.text,
-      location: _locationController.text,
-    );
-
-    if (mounted) {
-      setState(() => _isSaving = false);
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Profile updated successfully!'),
-        backgroundColor: AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ));
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Profile updated successfully!'),
+          backgroundColor: AppColors.primary,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -98,7 +100,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(height: 10),
                     _buildAvatar(),
                     const SizedBox(height: 32),
-                    _buildField(label: 'Full Name', controller: _nameController,
+                    _buildField(label: 'User Name', controller: _nameController,
                         icon: Icons.person_rounded),
                     const SizedBox(height: 16),
                     _buildField(label: 'Email Address', controller: _emailController,
@@ -119,13 +121,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           backgroundColor: AppColors.primary,
                           foregroundColor: Colors.black,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16)),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                           elevation: 0,
                         ),
                         child: _isSaving
                             ? const SizedBox(
-                                width: 24,
-                                height: 24,
+                                width: 20,
+                                height: 20,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   color: Colors.black,

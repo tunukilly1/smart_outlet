@@ -133,6 +133,27 @@ class ApiService {
         });
         return response.data;
     }
+    //----FETCH USER PROFILE----------------------
+    Future<Map<String, dynamic>> getUserProfile() async {
+        final response = await _dio.get('/api/users/profile/',
+            options: await _authOptions());
+        return response.data;
+    }
+    //---------UPDATE PROFILE-------------------------------
+    Future<Map<String, dynamic>> updateUserProfile({
+        required String username,
+        required String email,
+        required String phone,
+        required String location,
+    }) async {
+        final response = await _dio.patch('/api/users/profile/', data: {
+            'username': username,
+            'email': email,
+            'phone': phone,
+            'location': location,
+        }, options: await _authOptions());
+        return response.data;
+    }
 
     // ── DEVICE ENDPOINTS ──────────────────────────────────
 
@@ -164,7 +185,16 @@ class ApiService {
              'location': location,
             'firmware_version': firmwareVersion,
         }, options: await _authOptions());
+        debugPrint('REGISTER RESPONSE: ${response.data}');
         return response.data;
+    }
+    //CLAIM regeneration
+    Future<Map<String, dynamic>> regenerateClaimCode(int deviceId) async {
+        final response = await _dio.post(
+            '/api/devices/$deviceId/regenerate-claim/',
+            options: await _authOptions(),
+        );
+        return response.data as Map<String, dynamic>;
     }
 
     // POST /api/devices/{id}/control/
@@ -175,6 +205,23 @@ class ApiService {
         final response = await _dio.post(
             '/api/devices/$deviceId/control/',
             data: {'action': turnOn ? 'ON' : 'OFF'},
+            options: await _authOptions(),
+        );
+        return response.data;
+    }
+    // --------DELETE /api/device/{id}/------------
+    Future<void> deleteDevice(int deviceId) async {
+        await _dio.delete('/api/devices/$deviceId/',
+            options: await _authOptions());
+    }
+    //--------------RENAME DEVICE----------------------------
+    Future<dynamic> renameDevice({
+        required int deviceId,
+        required String newName,
+    }) async {
+        final response = await _dio.patch(
+            '/api/devices/$deviceId/',
+            data: {'device_name': newName},
             options: await _authOptions(),
         );
         return response.data;
@@ -208,6 +255,24 @@ class ApiService {
     }
 
     // ── SCHEDULE ENDPOINTS ────────────────────────────────
+    Future<void> saveSchedule({
+        required int deviceId,
+        String? startTime,
+        String? endTime,
+        String repeatPattern = 'daily',
+    }) async {
+        await _dio.post(
+            '/api/schedules/',
+            data: {
+                'device': deviceId,
+                if (startTime != null) 'start_time': startTime,
+                if (endTime != null) 'end_time': endTime,
+                'repeat_pattern': repeatPattern,
+                'status': 'active',
+            },
+            options: await _authOptions(),
+        );
+    }
 
     // GET /api/schedules/
     Future<List<dynamic>> getSchedules() async {
@@ -221,7 +286,7 @@ class ApiService {
     Future<Map<String, dynamic>> createSchedule({
         required int deviceId,
         required String startTime,
-        String? endTime, // optional — for always-on devices like fridge
+        String? endTime,
         String repeatPattern = 'daily',
     }) async {
         final data = {

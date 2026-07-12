@@ -24,7 +24,7 @@ class OutletService extends ChangeNotifier {
       _rooms.fold(0, (sum, r) => sum + r.totalOutlets);
   int get totalActiveOutlets =>
       _rooms.fold(0, (sum, r) => sum + r.activeCount);
-  double get totalKwhToday =>
+  double get totalKwh =>
       _rooms.fold(0.0, (sum, r) => sum + r.totalKwh);
 
   // --- FETCH ENERGY DATA FROM BACKEND
@@ -38,20 +38,52 @@ class OutletService extends ChangeNotifier {
           final history = await _api.getEnergyHistory(deviceId);
           if (history.isEmpty) continue;
 
-          // Get the latest energy record
-          final latest = history.first;
-          outlet.voltage = _toDouble(
-              latest['voltage'] ?? 220.0);
-          outlet.watts = _toDouble(
-              latest['power'] ?? 0.0);
-          outlet.kwhToday = _toDouble(
-              latest['energy_kwh'] ?? 0.0);
+          // Get today's date
+          final now = DateTime.now();
+
+          // Filter to TODAY's records only and sum kWh
+          double todayKwh = 0.0;
+          double latestPower = 0.0;
+          double latestVoltage = 0.0;
+
+          for (final record in history) {
+            // Strip timezone to prevent -3hr conversion
+            final rawTime = (record['timestamp'] ?? '')
+                .toString()
+                .replaceAll('Z', '')
+                .replaceAll('+00:00', '')
+                .replaceAll('+03:00', '');
+            final time = DateTime.tryParse(rawTime);
+
+            // Only count readings from TODAY
+            if (time != null &&
+                time.year == now.year &&
+                time.month == now.month &&
+                time.day == now.day) {
+              todayKwh += _toDouble(record['energy_kwh']);
+            }
+
+            // Get power and voltage from the most recent record
+            // (history is ordered newest first from backend)
+            if (record == history.first) {
+              latestPower = _toDouble(record['power']);
+              latestVoltage = _toDouble(record['voltage']);
+            }
+          }
+
+          // Set kwhToday as SUM of today's readings
+          outlet.kwhToday = todayKwh;
+
+          // Set live power and voltage from latest record
+          if (latestVoltage > 10) outlet.voltage = latestVoltage;
+          if (latestPower >= 0) outlet.watts = latestPower;
 
           debugPrint(
-              'Energy for ${outlet.deviceName}: '
-                  '${outlet.voltage}V '
-                  '${outlet.watts}W '
-                  '${outlet.kwhToday}kWh');
+            'Energy [${outlet.deviceName}]: '
+                'todayKwh=$todayKwh '
+                'power=${outlet.watts}W '
+                'voltage=${outlet.voltage}V',
+          );
         }
       }
     } catch (e) {
@@ -102,7 +134,7 @@ class OutletService extends ChangeNotifier {
 
       // Build new rooms from backend
       final backendRooms = grouped.entries
-          .where((e) => e.value.isNotEmpty)
+         // .where((e) => e.value.isNotEmpty)
           .map((entry) => RoomModel(
         id: entry.key
             .toLowerCase()
@@ -191,6 +223,57 @@ class OutletService extends ChangeNotifier {
     }
   }
 
+  //----------RENAME DEVICE-----------------------------
+  Future<void> renameOutlet(String outletId, String newName) async {
+    final outlet = getOutletById(outletId);
+    if (outlet == null) return;
+
+    // Rename on backend
+    if (outlet.backendId != null) {
+      try {
+        await _api.renameDevice(
+            deviceId: outlet.backendId!, newName: newName);
+      } catch (e) {
+        debugPrint('Rename backend error: $e');
+      }
+    }
+
+    // Update locally
+    outlet.deviceName = newName;
+    notifyListeners();
+  }
+
+  //-------DELETE OUTLET----------------
+  Future<void> deleteOutlet(String roomId, String outletId) async {
+    // Find the outlet first so we have the backendId
+    final room = getRoomById(roomId);
+    if (room == null) return;
+
+    final outlet = room.outlets.firstWhere(
+          (o) => o.id == outletId,
+      orElse: () => throw Exception('Outlet not found'),
+    );
+
+    final backendId = outlet.backendId;
+    // Then delete from backend
+    if (backendId != null) {
+      try {
+        await _api.deleteDevice(backendId);
+      } catch (e) {
+        debugPrint('DELETE DEVICE ERROR: $e');
+        rethrow;
+      }
+    } else {
+      debugPrint('DELETE DEVICE: backendId is null for outletId=$outletId');
+    }
+
+    // Remove locally first for instant feedback
+    room.outlets.removeWhere((o) => o.id == outletId);
+    notifyListeners();
+  }
+
+
+
   // ── TOGGLE OUTLET ─────────────────────────────────────
   Future<void> toggleOutlet(String outletId) async {
     final outlet = getOutletById(outletId);
@@ -250,27 +333,10 @@ class OutletService extends ChangeNotifier {
     }
   }
 
-  // ── UNPLUG DEVICE ─────────────────────────────────────
-  void unplugDevice(String outletId) {
-    final outlet = getOutletById(outletId);
-    if (outlet != null) {
-      outlet.deviceName = 'Empty';
-      outlet.deviceType = 'empty';
-      outlet.isOn = false;
-      notifyListeners();
-    }
-  }
-
-  // ── DELETE OUTLET ─────────────────────────────────────
-  void deleteOutlet(String roomId, String outletId) {
-    final room = getRoomById(roomId);
-    if (room != null) {
-      room.outlets.removeWhere((o) => o.id == outletId);
-      if (room.outlets.isEmpty) {
-        _rooms.removeWhere((r) => r.id == roomId);
-      }
-      notifyListeners();
-    }
+  // ── DELETE ROOM ───────────────────────────────────────
+  Future<void> deleteRoom(String roomId) async {
+    _rooms.removeWhere((r) => r.id == roomId);
+    notifyListeners();
   }
 
   // ── UPDATE SCHEDULE (local) ───────────────────────────

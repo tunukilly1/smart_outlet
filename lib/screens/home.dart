@@ -10,6 +10,7 @@ import 'all_rooms.dart';
 import 'notifications.dart';
 import '../services/device_api.dart';
 import 'energy.dart';
+import '../widget/nav_bar.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -319,7 +320,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         Expanded(child: _StatCard(
           value: _service.isLoading
               ? '—'
-              : _service.totalKwhToday.toStringAsFixed(1),
+              : _service.totalKwh.toStringAsFixed(3),
           label: 'kWh',
           icon: Icons.electric_meter_rounded,
           gradient: [AppColors.amberDark, AppColors.amber],
@@ -452,7 +453,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: room.hasActiveOutlet
-                ? AppColors.primary.withValues(alpha: 0.2)
+                ? AppColors.primary.withOpacity(0.2)
                 : context.borderColor,
           ),
         ),
@@ -463,7 +464,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               width: 40, height: 40,
               decoration: BoxDecoration(
                 color: room.hasActiveOutlet
-                    ? AppColors.primary.withValues(alpha: 0.12)
+                    ? AppColors.primary.withOpacity(0.12)
                     : context.borderColor,
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -502,7 +503,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           Container(
             width: 40, height: 40,
             decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
+              color: AppColors.primary.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.add_rounded, color: AppColors.primary, size: 22),
@@ -613,95 +614,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ─── BOTTOM NAV ───────────────────────────────────────────
+  // ─── BOTTOM NAV ──────
   Widget _buildBottomNav() {
-    final items = [
-      {
-        'icon': Icons.home_rounded,
-        'label': 'Home',
-      },
-      {
-        'icon': Icons.bolt_rounded,
-        'label': 'Energy',
-      },
-      {
-        'icon': Icons.settings_rounded,
-        'label': 'Settings',
-      },
-    ];
-
-    return SafeArea(
-      top: false,
-      child: Container(
-        height: 72,
-        decoration: BoxDecoration(
-          color: context.surfaceColor,
-          border: Border(
-            top: BorderSide(
-              color: context.borderColor,
-            ),
-          ),
-        ),
-        child: Row(
-          children: List.generate(items.length, (index) {
-            final active = _selectedIndex == index;
-
-            return Expanded(
-              child: InkWell(
-                onTap: () {
-                  setState(() {
-                    _selectedIndex = index;
-                  });
-
-                  if (index == 1) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const EnergyScreen(),
-                      ),
-                    );
-                  } else if (index == 2) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SettingsScreen(),
-                        ),
-                      );
-                  }
-                },
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      items[index]['icon'] as IconData,
-                      size: 24,
-                      color: active
-                          ? AppColors.primary
-                          : context.textMuted,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      items[index]['label'] as String,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: active
-                            ? FontWeight.w600
-                            : FontWeight.w400,
-                        color: active
-                            ? AppColors.primary
-                            : context.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-        ),
-      ),
+    return BottomNavWidget(
+      selectedIndex: _selectedIndex,
+      onTap: (i) => setState(() => _selectedIndex = i),
     );
   }
-
   String _getRoomIcon(String roomName) {
     final name = roomName.toLowerCase();
 

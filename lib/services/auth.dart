@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'api_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService extends ChangeNotifier {
   static final AuthService _instance = AuthService._internal();
@@ -70,6 +71,24 @@ class AuthService extends ChangeNotifier {
     debugPrint('loadUserFromToken error: $e');
     }
     }
+  Future<void> loadSavedProfile() async {
+    try {
+      // Load from backend first
+      final data = await ApiService().getUserProfile();
+      _username = data['username']?.toString() ?? _username;
+      _email = data['email']?.toString() ?? '';
+      _phone = data['phone']?.toString() ?? '';
+      _location = data['location']?.toString() ?? '';
+      notifyListeners();
+    } catch (_) {
+      // Fallback to locally saved prefs
+      final prefs = await SharedPreferences.getInstance();
+      _email = prefs.getString('profile_email') ?? '';
+      _phone = prefs.getString('profile_phone') ?? '';
+      _location = prefs.getString('profile_location') ?? '';
+      notifyListeners();
+    }
+  }
 
   // ── REGISTER ──────────────────────────────────────────
   Future<bool> register({
@@ -167,19 +186,35 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── UPDATE PROFILE (local only until backend adds endpoint) ──
-  void updateProfile({
-    required String firstName,
-    required String lastName,
+  Future<void> updateProfile({
+    required String username,
     required String email,
     required String phone,
-    String location = '',
-  }) {
-    _firstName = firstName;
-    _lastName = lastName;
+    required String location,
+  }) async {
+    try {
+      // Save to backend
+      await ApiService().updateUserProfile(
+        username: username,
+        email: email,
+        phone: phone,
+        location: location,
+      );
+    } catch (e) {
+      debugPrint('Profile update backend error: $e');
+    }
+    // Update local state
+    _username = username;
     _email = email;
     _phone = phone;
     _location = location;
+
+    // Save locally as fallback
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('profile_email', email);
+    await prefs.setString('profile_phone', phone);
+    await prefs.setString('profile_location', location);
+
     notifyListeners();
   }
 

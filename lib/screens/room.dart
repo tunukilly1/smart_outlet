@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-//import '../services/wifi_service.dart';
 import '../theme/theme.dart';
 import '../models/room_model.dart';
 import '../models/outlet_model.dart';
 import '../services/outlet_service.dart';
 import '../services/device_api.dart';
-//import '../widget/wifi_picker.dart';
+import '../widget/claim_code.dart';
+import '../widget/nav_bar.dart';
 import 'outlet.dart';
 
 class RoomScreen extends StatefulWidget {
@@ -19,10 +19,102 @@ class RoomScreen extends StatefulWidget {
 class _RoomScreenState extends State<RoomScreen> {
   final OutletService _service = OutletService();
   final DeviceApiService _deviceApi = DeviceApiService();
+  int _selectedIndex = 0;
 
   void _handleServiceChange() => setState(() {});
+  void _showRenameSheet(OutletModel outlet) {
+    final ctrl = TextEditingController(text: outlet.deviceName);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _isDark ? AppColors.surface : AppColors.lightSurface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: EdgeInsets.fromLTRB(
+            24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+        child: Column(mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(width: 40, height: 4,
+                  decoration: BoxDecoration(color: _borderColor,
+                      borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              Text('Rename Device', style: TextStyle(
+                  fontSize: 17, fontWeight: FontWeight.w700, color: _textColor)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                style: TextStyle(color: _textColor),
+                decoration: InputDecoration(
+                  hintText: 'Enter new name',
+                  hintStyle: TextStyle(color: _mutedColor),
+                  filled: true, fillColor: _surfaceColor,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: _borderColor)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: _borderColor)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppColors.primary)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity, height: 52,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    final newName = ctrl.text.trim();
+                    if (newName.isEmpty || newName == outlet.deviceName) {
+                      Navigator.pop(context);
+                      return;
+                    }
+                    Navigator.pop(context);
+
+                    // Update locally immediately
+                    _service.renameOutlet(outlet.id, newName);
+
+                    // Sync to backend
+                    if (outlet.backendId != null) {
+                      try {
+                        await _deviceApi.renameDevice(
+                          deviceId: outlet.backendId!,
+                          newName: newName,
+                        );
+                      } catch (_) {
+                        // Revert if backend call fails
+                        _service.renameOutlet(outlet.id, outlet.deviceName);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: const Text('Rename failed. Please try again.'),
+                            backgroundColor: AppColors.red,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ));
+                        }
+                      }
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text('Save', style: TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 15)),
+                ),
+              ),
+            ]),
+        ),
+    );
+  }
 
   @override
+
   void initState() {
     super.initState();
     _service.addListener(_handleServiceChange);
@@ -56,32 +148,40 @@ class _RoomScreenState extends State<RoomScreen> {
   Color get _textColor => _isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
   Color get _mutedColor => _isDark ? AppColors.textMuted : AppColors.lightTextMuted;
 
+  Future<void> _loadDevices() async {
+    await _deviceApi.fetchDevices();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
-        child: Column(children: [
-          _buildHeader(),
-          _buildRoomSummary(),
-          Expanded(
-            child: GridView.builder(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 0.82,
+        child: RefreshIndicator(
+          onRefresh: _loadDevices,
+          child: Column(children: [
+            _buildHeader(),
+            _buildRoomSummary(),
+            Expanded(
+              child: GridView.builder(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.82,
+                ),
+                itemCount: widget.room.outlets.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == widget.room.outlets.length) return _buildAddOutletCard();
+                  return _buildOutletCard(widget.room.outlets[index]);
+                },
               ),
-              itemCount: widget.room.outlets.length + 1,
-              itemBuilder: (context, index) {
-                if (index == widget.room.outlets.length) return _buildAddOutletCard();
-                return _buildOutletCard(widget.room.outlets[index]);
-              },
             ),
-          ),
-        ]),
+          ]),
+        ),
       ),
+      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
@@ -134,7 +234,9 @@ class _RoomScreenState extends State<RoomScreen> {
               label: 'Active', color: AppColors.primary),
           Container(width: 1, height: 36, color: _borderColor),
           _SummaryItem(icon: Icons.electric_meter_rounded,
-              value: widget.room.totalKwh.toStringAsFixed(1),
+                value: _service.isLoading
+                    ? '—'
+                    : '${_service.totalKwh.toStringAsFixed(3)} ',
               label: 'kWh', color: AppColors.amber),
         ]),
       ),
@@ -148,7 +250,9 @@ class _RoomScreenState extends State<RoomScreen> {
 
     return GestureDetector(
       onTap: () {
-        if (!isEmpty) {
+        if (!outlet.isClaimed) {
+          _resumeClaimSetup(outlet);
+        } else if (!isEmpty) {
           Navigator.push(context, MaterialPageRoute(
             builder: (_) => OutletScreen(outlet: outlet, roomName: widget.room.name),
           ));
@@ -282,21 +386,28 @@ class _RoomScreenState extends State<RoomScreen> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _textColor)),
               Text('Outlet ${outlet.outletNumber} · ${widget.room.name}',
                   style: TextStyle(fontSize: 12, color: _mutedColor)),
+              const SizedBox(height: 10),
+              if (outlet.isClaimed == false)
+                _ManageOption(
+                  icon: Icons.qr_code_2_rounded,
+                  label: 'Finish WiFi Setup',
+                  subtitle: 'This outlet has not connected yet',
+                  color: AppColors.primary,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _resumeClaimSetup(outlet);
+                  },
+                ),
               const SizedBox(height: 16),
               if (!outlet.isEmpty) ...[
                 _ManageOption(
-                  icon: Icons.electrical_services_rounded,
-                  color: AppColors.amber,
-                  label: 'Unplug Device',
+                  icon: Icons.edit_rounded,
+                  label: 'Rename Device',
+                  subtitle: outlet.deviceName,
+                  color: AppColors.primary,
                   onTap: () {
                     Navigator.pop(ctx);
-                    _service.unplugDevice(outlet.id);
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('${outlet.deviceName} unplugged'),
-                      backgroundColor: AppColors.amber,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ));
+                    _showRenameSheet(outlet);
                   },
                 ),
                 const SizedBox(height: 10),
@@ -305,13 +416,34 @@ class _RoomScreenState extends State<RoomScreen> {
                 icon: Icons.delete_rounded,
                 color: AppColors.red,
                 label: 'Delete Outlet',
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(ctx);
-                  _showDeleteConfirm(outlet);
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => const Center(
+                      child: CircularProgressIndicator(color: AppColors.primary),
+                    ),
+                  );
+                  try {
+                    await _service.deleteOutlet(widget.room.id, outlet.id);
+                    if (context.mounted) Navigator.pop(context);
+                  } catch (e) {
+                    if (context.mounted) Navigator.pop(context); // close spinner
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: const Text('Could not delete outlet. Try again.'),
+                        backgroundColor: AppColors.red,
+                        behavior: SnackBarBehavior.floating,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                      ));
+                    }
+                  }
                 },
               ),
             ]),
-      ),
+        ),
     );
   }
 
@@ -334,9 +466,10 @@ class _RoomScreenState extends State<RoomScreen> {
             child: Text('Cancel', style: TextStyle(color: _mutedColor)),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              _service.deleteOutlet(widget.room.id, outlet.id);
+              await _service.deleteOutlet(widget.room.id, outlet.id);
+
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                 content: const Text('Outlet deleted'),
                 backgroundColor: AppColors.red,
@@ -351,6 +484,7 @@ class _RoomScreenState extends State<RoomScreen> {
       ),
     );
   }
+
 
   Widget _buildAddOutletCard() {
     return GestureDetector(
@@ -380,8 +514,6 @@ class _RoomScreenState extends State<RoomScreen> {
   void _showAddOutletSheet() {
     final nameController = TextEditingController();
     String selectedType = 'lamp';
-    //String? selectedWifiSSID;
-    //String selectedWifiPassword = '';
     final types = [
       {'type': 'lamp', 'icon': Icons.light_rounded, 'label': 'Lamp'},
       {'type': 'tv', 'icon': Icons.tv_rounded, 'label': 'TV'},
@@ -470,28 +602,28 @@ class _RoomScreenState extends State<RoomScreen> {
                     );
                   }).toList(),
                 ),
-                if (selectedType == 'other') ...[
+               /* if (selectedType == 'other') ...[
                   const SizedBox(height: 12),
                   TextField(
                     onChanged: (val) => setModal(() => selectedType = val.toLowerCase().trim()),
                     style: TextStyle(color: _textColor),
                     decoration: InputDecoration(
-                      hintText: 'Describe your device (e.g. Iron, Kettle)',
-                      hintStyle: TextStyle(color: _mutedColor),
-                      filled: true,
-                      fillColor: _surfaceColor,
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: _borderColor)),
-                      enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: _borderColor)),
-                      focusedBorder: OutlineInputBorder(
+                     // hintText: 'Describe your device (e.g. Iron, Kettle)',
+                     // hintStyle: TextStyle(color: _mutedColor),
+                    //  filled: true,
+                     // fillColor: _surfaceColor,
+                     // border: OutlineInputBorder(
+                       //   borderRadius: BorderRadius.circular(12),
+                          //borderSide: BorderSide(color: _borderColor)),
+                      //enabledBorder: OutlineInputBorder(
+                         // borderRadius: BorderRadius.circular(12),
+                          //borderSide: BorderSide(color: _borderColor)),
+                      //focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: const BorderSide(color: AppColors.primary)),
                     ),
                   ),
-                ],
+                ],*/
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
@@ -514,18 +646,22 @@ class _RoomScreenState extends State<RoomScreen> {
                         ),
                       );
 
+                      String? claimCode;
+                      String? claimExpiresAt;
+
                       try {
                         await _deviceApi.registerDevice(
                           deviceName: nameController.text,
                           location: widget.room.name,
                         );
                         savedBackendId = _deviceApi.lastRegisteredId;
-                        debugPrint('SUCCESS: backendId = $savedBackendId');
+                        claimCode = _deviceApi.lastClaimCode;
+                        claimExpiresAt = _deviceApi.lastClaimExpiresAt;
+                        debugPrint('SUCCESS: backendId = $savedBackendId, claimCode = $claimCode');
                       } catch (e) {
                         errorMessage = e.toString();
                         debugPrint('REGISTER ERROR: $e');
                       }
-
                       // Close loading dialog
                       if (context.mounted) Navigator.pop(context);
 
@@ -542,7 +678,9 @@ class _RoomScreenState extends State<RoomScreen> {
                             ),
                             actions: [
                               TextButton(
-                                onPressed: () => Navigator.pop(context),
+                                onPressed: () async {
+                                  Navigator.pop(context);
+                                },
                                 child: const Text('OK'),
                               ),
                             ],
@@ -561,18 +699,23 @@ class _RoomScreenState extends State<RoomScreen> {
                         deviceType: selectedType,
                         backendId: savedBackendId,
                       );
-
+                      newOutlet.isClaimed = false;
                       _service.addOutlet(widget.room.id, newOutlet);
 
                       if (context.mounted) {
                         Navigator.pop(context); // Close "Add Outlet" sheet
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text('${nameController.text} added and synced!'),
-                          backgroundColor: AppColors.primary,
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                        ));
+
+                        if (claimCode != null) {
+                          await Future.delayed(const Duration(milliseconds: 250));
+                          if (context.mounted) {
+                            _showClaimCodeSheet(
+                              deviceId: savedBackendId!,
+                              deviceName: nameController.text,
+                              claimCode: claimCode,
+                              expiresAt: claimExpiresAt ?? '',
+                            );
+                          }
+                        }
                       }
                     },
                     style: ElevatedButton.styleFrom(
@@ -594,11 +737,112 @@ class _RoomScreenState extends State<RoomScreen> {
     );
   }
 
+  void _showClaimCodeSheet({
+    required int deviceId,
+    required String deviceName,
+    required String claimCode,
+    required String expiresAt,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      isDismissible: true,
+      enableDrag: false,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        expand: false,
+        builder: (ctx, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: _isDark ? AppColors.surface : AppColors.lightSurface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SingleChildScrollView(
+            controller: scrollController,
+            padding: EdgeInsets.fromLTRB(
+                24, 16, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
+            child: ClaimCodeWidget(
+              deviceId: deviceId,
+              deviceName: deviceName,
+              claimCode: claimCode,
+              expiresAt: expiresAt,
+              onConnected: () {
+                Navigator.pop(sheetContext);
+                _service.fetchAndSync();
+              },
+              onClose: () {
+                Navigator.pop(sheetContext);
+                _service.fetchAndSync();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  Future<void> _resumeClaimSetup(OutletModel outlet) async {
+    if (outlet.backendId == null) return;
+
+    final storedCode = outlet.claimCode;
+    final storedExpiry = outlet.claimExpiresAt;
+    final expiry = storedExpiry != null ? DateTime.tryParse(storedExpiry) : null;
+    final isStillValid = expiry != null && expiry.isAfter(DateTime.now());
+
+    if (storedCode != null && isStillValid) {
+      // Original code still valid — resume with remaining time
+      _showClaimCodeSheet(
+        deviceId: outlet.backendId!,
+        deviceName: outlet.deviceName,
+        claimCode: storedCode,
+        expiresAt: storedExpiry!,
+      );
+      return;
+    }
+
+    // Code expired — generate a new one
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      ),
+    );
+
+   final result = await _deviceApi.regenerateClaimCode(outlet.backendId!);
+
+    if (context.mounted) Navigator.pop(context);
+
+    if (result == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Could not get a new claim code. Try again.'),
+          backgroundColor: AppColors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
+      }
+      return;
+    }
+
+    // Store new code on the outlet for next time
+    outlet.claimCode = result['claim_code'] as String;
+    outlet.claimExpiresAt = result['claim_code_expires_at']?.toString() ?? '';
+
+    if (context.mounted) {
+      _showClaimCodeSheet(
+        deviceId: outlet.backendId!,
+        deviceName: outlet.deviceName,
+        claimCode: outlet.claimCode!,
+        expiresAt: outlet.claimExpiresAt!,
+      );
+    }
+  }
+
   void _showPlugDeviceSheet(OutletModel outlet) {
     final nameController = TextEditingController();
     String selectedType = 'lamp';
-    //String? selectedWifiSSID;
-    //String selectedWifiPassword = '';
     final types = [
       {'type': 'lamp', 'icon': Icons.light_rounded, 'label': 'Lamp'},
       {'type': 'tv', 'icon': Icons.tv_rounded, 'label': 'TV'},
@@ -687,6 +931,18 @@ class _RoomScreenState extends State<RoomScreen> {
                     );
                   }).toList(),
                 ),
+                /*const SizedBox(height: 20),
+                WiFiPickerWidget(
+                  selectedSSID: selectedWifiSSID,
+                  isDark: _isDark,
+                  onNetworkSelected: (ssid, password) {
+                    setModal(() {
+                      selectedWifiSSID = ssid;
+                      selectedWifiPassword = password;
+                    });
+                  },
+                ),*/
+
                 if (selectedType == 'other') ...[
                   const SizedBox(height: 12),
                   TextField(
@@ -709,19 +965,37 @@ class _RoomScreenState extends State<RoomScreen> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 24),
+
+               const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity, height: 52,
                   child: ElevatedButton(
                     onPressed: () async {
                       if (nameController.text.isEmpty) return;
-                      _service.plugDevice(outlet.id, nameController.text, selectedType);
+
+                      /*if (selectedWifiSSID == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: const Text('Please select a WiFi network'),
+                          backgroundColor: AppColors.red,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ));
+                        return;
+                      }*/
+
+                      _service.plugDevice(
+                          outlet.id, nameController.text, selectedType);
                       try {
                         await _deviceApi.registerDevice(
                           deviceName: nameController.text,
                           location: widget.room.name,
                         );
                       } catch (_) {}
+
+                      /*WiFiService().updateCredentials(
+                          outlet.id, selectedWifiSSID!, selectedWifiPassword);*/
+
                       if (context.mounted) Navigator.pop(context);
                     },
                     style: ElevatedButton.styleFrom(
@@ -771,10 +1045,26 @@ class _RoomScreenState extends State<RoomScreen> {
               const SizedBox(height: 10),
               _ManageOption(
                 icon: Icons.delete_rounded, color: AppColors.red, label: 'Delete Room',
-                onTap: () { Navigator.pop(ctx); Navigator.pop(context); },
+                  onTap: () async {
+                    try {
+                      await _service.deleteRoom(widget.room.id);
+                      Navigator.pop(ctx);
+                      Navigator.pop(context);
+                    } catch (e) {
+                      print(e);
+                    }
+                  }
               ),
             ]),
-      ),
+        ),
+    );
+  }
+
+  // ─── BOTTOM NAV ──────
+  Widget _buildBottomNav() {
+    return BottomNavWidget(
+      selectedIndex: _selectedIndex,
+      onTap: (i) => setState(() => _selectedIndex = i),
     );
   }
 }
@@ -804,9 +1094,10 @@ class _ManageOption extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String label;
+  final String? subtitle;
   final VoidCallback onTap;
   const _ManageOption({required this.icon, required this.color,
-    required this.label, required this.onTap});
+    required this.label, this.subtitle, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -830,8 +1121,19 @@ class _ManageOption extends StatelessWidget {
                   borderRadius: BorderRadius.circular(9)),
               child: Icon(icon, color: color, size: 17)),
           const SizedBox(width: 12),
-          Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textColor)),
-          const Spacer(),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: textColor)),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 2),
+                  Text(subtitle!, style: TextStyle(fontSize: 11, color: mutedColor)),
+                ],
+              ],
+            ),
+          ),
           Icon(Icons.chevron_right_rounded, color: mutedColor, size: 18),
         ]),
       ),

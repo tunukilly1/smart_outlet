@@ -58,6 +58,7 @@ class _SplashScreenState extends State<SplashScreen>
     final authService = AuthService();
     final isLoggedIn = await authService.checkAuth();
     await authService.loadUserFromToken();
+    await authService.loadSavedProfile();
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
@@ -70,6 +71,7 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
   }
+
 
   @override
   void dispose() {

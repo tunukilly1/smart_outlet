@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/outlet_model.dart';
 import '../widget/energy_chart.dart';
+import '../widget/nav_bar.dart';
 import '../services/outlet_service.dart';
 import '../services/api_service.dart';
 import '../theme/theme.dart';
@@ -16,6 +17,9 @@ class OutletScreen extends StatefulWidget {
     required this.roomName,
   });
 
+  OutletModel get _liveOutlet =>
+      OutletService().getOutletById(outlet.id) ?? outlet;
+
   @override
   State<OutletScreen> createState() => _OutletScreenState();
 }
@@ -25,9 +29,11 @@ class _OutletScreenState extends State<OutletScreen>
   final OutletService _service = OutletService();
   final ApiService _api = ApiService();
   late TabController _tabController;
+  int _selectedIndex = 0;
 
   // Energy data
   List<double> _hourlyData = List.filled(24, 0.0);
+  List<Map<String, dynamic>> _allReadings= [];
   bool _loadingEnergy = false;
 
   // Schedule data from backend
@@ -47,13 +53,21 @@ class _OutletScreenState extends State<OutletScreen>
   @override
   void initState() {
     super.initState();
+    OutletService().addListener(_onServiceChange);
     _tabController = TabController(length: 3, vsync: this);
     _service.addListener(() => setState(() {}));
     _loadAllData();
 
     // Auto refresh energy every 30 seconds
     _refreshTimer = Timer.periodic(
-        const Duration(seconds: 30), (_) => _loadAllData());
+        const Duration(seconds: 30), (_) {
+      if (mounted) _fetchEnergyHistory();
+
+      //=> _loadAllData()
+    });
+  }
+  void _onServiceChange() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -81,30 +95,65 @@ class _OutletScreenState extends State<OutletScreen>
     setState(() => _loadingEnergy = true);
     try {
       final history = await _api.getEnergyHistory(deviceId);
-      final hourly = List<double>.filled(24, 0.0);
 
-      for (final record in history) {
-        final timeStr = record['timestamp']?.toString() ?? '';
-        final time = DateTime.tryParse(timeStr);
-        if (time != null) {
-          final kwh = double.tryParse(
-              record['energy_kwh']?.toString() ?? '0') ?? 0.0;
-          hourly[time.hour] += kwh;
-        }
+      if (history.isEmpty) {
+        setState(() => _loadingEnergy = false);
+        return;
       }
 
-      if (mounted) {
+      // Sort by timestamp oldest first
+      final sorted = List<Map<String, dynamic>>.from(
+          history.map((e) => Map<String, dynamic>.from(e)));
+      sorted.sort((a, b) {
+        final ta = DateTime.tryParse(
+            a['timestamp']?.toString() ?? '') ?? DateTime(2000);
+        final tb = DateTime.tryParse(
+            b['timestamp']?.toString() ?? '') ?? DateTime(2000);
+        return ta.compareTo(tb);
+      });
+
+      // Filter to today's readings only
+      final now = DateTime.now();
+      final todayReadings = sorted.where((r) {
+        final t = DateTime.tryParse(
+          (r['timestamp']?.toString() ?? '')
+              .replaceAll('Z', '')
+              .replaceAll('+00:00', '')
+              .replaceAll('+03:00', ''),
+        );
+        if (t == null) return false;
+        return t.year == now.year &&
+            t.month == now.month &&
+            t.day == now.day;
+      }).toList();
+
+      debugPrint('Today readings: ${todayReadings.length}');
+      debugPrint('Today date: ${now.year}-${now.month}-${now.day}');
+
+// IMPORTANT: Only show today's readings
+// If none exist for today, show empty (no energy today message)
+      setState(() {
+        _allReadings = todayReadings; // ← do NOT fall back to all readings
+        _loadingEnergy = false;
+      });
+      if (todayReadings.isEmpty) {
+        // Show all readings if none from today
         setState(() {
-          _hourlyData = hourly;
+          _allReadings = sorted;
           _loadingEnergy = false;
         });
+        return;
       }
+
+      setState(() {
+        _allReadings = todayReadings;
+        _loadingEnergy = false;
+      });
     } catch (e) {
       debugPrint('Energy fetch error: $e');
       if (mounted) setState(() => _loadingEnergy = false);
     }
   }
-
   // ── FETCH SCHEDULES FROM BACKEND ──────────────────────
   Future<void> _fetchSchedules() async {
     final deviceId = _backendId;
@@ -177,10 +226,10 @@ class _OutletScreenState extends State<OutletScreen>
 
   // Convert DateTime to Tanzania UTC+3 string
   String _toTzString(DateTime dt) {
-    final formatted =
-        '${dt.year}-${_pad(dt.month)}-${_pad(dt.day)}'
+    // Send local time with Tanzania UTC+3 offset
+    // Backend expects ISO 8601 with offset to schedule correctly
+    return '${dt.year}-${_pad(dt.month)}-${_pad(dt.day)}'
         'T${_pad(dt.hour)}:${_pad(dt.minute)}:00+03:00';
-    return formatted;
   }
 
   String _pad(int n) => n.toString().padLeft(2, '0');
@@ -211,15 +260,12 @@ class _OutletScreenState extends State<OutletScreen>
   Widget build(BuildContext context) {
     final outlet = _service.getOutletById(widget.outlet.id) ??
         widget.outlet;
-
     return Scaffold(
       backgroundColor:
       _isDark ? AppColors.background : AppColors.lightBackground,
       body: SafeArea(
         child: Column(children: [
           _buildHeader(outlet),
-          _buildStatusBanner(outlet),
-          _buildStatCards(outlet),
           _buildHealthCard(outlet),
           _buildTabs(),
           Expanded(
@@ -229,11 +275,13 @@ class _OutletScreenState extends State<OutletScreen>
                 _buildEnergyTab(),
                 _buildScheduleTab(),
                 _buildHistoryTab(),
+
               ],
             ),
           ),
         ]),
       ),
+      bottomNavigationBar: _buildBottomNav(),
     );
   }
 
@@ -271,7 +319,7 @@ class _OutletScreenState extends State<OutletScreen>
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.15),
+                    color: AppColors.primary.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(outlet.deviceName,
@@ -317,7 +365,7 @@ class _OutletScreenState extends State<OutletScreen>
                   color: Colors.white,
                   shape: BoxShape.circle,
                   boxShadow: [BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
+                      color: Colors.black.withOpacity(0.15),
                       blurRadius: 4)],
                 ),
                 child: Icon(Icons.power_settings_new_rounded,
@@ -332,114 +380,9 @@ class _OutletScreenState extends State<OutletScreen>
     );
   }
 
-  // ── STATUS BANNER ─────────────────────────────────────
-  Widget _buildStatusBanner(OutletModel outlet) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-      padding: const EdgeInsets.symmetric(
-          horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: outlet.isOn
-            ? AppColors.primary.withValues(alpha: 0.1)
-            : (_isDark ? AppColors.surfaceLight
-            : AppColors.lightSurface),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color: outlet.isOn
-                ? AppColors.primary.withValues(alpha: 0.3)
-                : (_isDark ? AppColors.border
-                : AppColors.lightBorder)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(children: [
-            Container(
-              width: 8, height: 8,
-              decoration: BoxDecoration(
-                color: outlet.isOn
-                    ? AppColors.primary : AppColors.textMuted,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              outlet.isOn
-                  ? 'Outlet is Powered ON'
-                  : 'Outlet is Powered OFF',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: outlet.isOn
-                    ? AppColors.primary
-                    : (_isDark ? AppColors.textMuted
-                    : AppColors.lightTextMuted),
-              ),
-            ),
-          ]),
-          Text(
-            outlet.isOn
-                ? '${outlet.wattsFormatted} · ${outlet.voltageFormatted}'
-                : '0W · 0V',
-            style: TextStyle(
-                fontSize: 12,
-                color: _isDark
-                    ? AppColors.textMuted
-                    : AppColors.lightTextMuted),
-          ),
-        ],
-      ),
-    );
-  }
 
-  // ── STAT CARDS ────────────────────────────────────────
-  Widget _buildStatCards(OutletModel outlet) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-      child: Row(children: [
-        _statCard('${outlet.kwhToday.toStringAsFixed(2)} kWh',
-            'Used Today'),
-        const SizedBox(width: 10),
-        _statCard(outlet.runtimeFormatted, 'Runtime'),
-        const SizedBox(width: 10),
-        _statCard(outlet.isOn
-            ? outlet.voltageFormatted : '0V', 'Voltage'),
-      ]),
-    );
-  }
 
-  Widget _statCard(String value, String label) {
-    final surfaceColor =
-    _isDark ? AppColors.surfaceLight : AppColors.lightSurface;
-    final borderColor =
-    _isDark ? AppColors.border : AppColors.lightBorder;
-    final textColor =
-    _isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
-    final mutedColor =
-    _isDark ? AppColors.textMuted : AppColors.lightTextMuted;
-
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: surfaceColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: borderColor),
-        ),
-        child: Column(children: [
-          Text(value,
-              style: TextStyle(fontSize: 14,
-                  fontWeight: FontWeight.w700, color: textColor)),
-          const SizedBox(height: 4),
-          Text(label,
-              style: TextStyle(fontSize: 10, color: mutedColor),
-              textAlign: TextAlign.center),
-        ]),
-      ),
-    );
-  }
-
-  // ── HEALTH CARD ───────────────────────────────────────
+   // ── HEALTH CARD ───────────────────────────────────────
   Widget _buildHealthCard(OutletModel outlet) {
     final isHealthy = outlet.watts < 3000 && outlet.voltage < 260;
     final surfaceColor =
@@ -504,17 +447,20 @@ class _OutletScreenState extends State<OutletScreen>
     _isDark ? AppColors.textMuted : AppColors.lightTextMuted;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
+      margin: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: surfaceColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: TabBar(
+        indicatorSize:TabBarIndicatorSize.tab,
+        labelPadding: EdgeInsets.symmetric(vertical:12, horizontal:16),
         controller: _tabController,
         indicator: BoxDecoration(
           color: AppColors.primary,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
         ),
+        dividerColor:Colors.transparent,
         labelColor: Colors.black,
         unselectedLabelColor: mutedColor,
         labelStyle: const TextStyle(
@@ -538,7 +484,6 @@ class _OutletScreenState extends State<OutletScreen>
     _isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
     final mutedColor =
     _isDark ? AppColors.textMuted : AppColors.lightTextMuted;
-    final hasData = _hourlyData.any((v) => v > 0);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -546,7 +491,7 @@ class _OutletScreenState extends State<OutletScreen>
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: surfaceColor,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(5  ),
           border: Border.all(color: borderColor),
         ),
         child: Column(
@@ -570,13 +515,13 @@ class _OutletScreenState extends State<OutletScreen>
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
+                        color: AppColors.primary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: _loadingEnergy
                           ? const SizedBox(width: 16, height: 16,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                              strokeWidth: 5,
                               color: AppColors.primary))
                           : const Icon(Icons.refresh_rounded,
                           size: 16, color: AppColors.primary),
@@ -588,20 +533,12 @@ class _OutletScreenState extends State<OutletScreen>
 
               EnergyChartWidget(
                 hourlyData: _hourlyData,
+                allReadings: _allReadings,
                 isLoading: _loadingEnergy,
                 isDark: _isDark,
-                title: 'Energy Usage',
-                subtitle: 'kWh per hour today',
+
               ),
 
-              // Dynamic time labels based on real data
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: _buildTimeLabels(),
-                ),
-              ),
             ]),
       ),
     );
@@ -635,134 +572,161 @@ class _OutletScreenState extends State<OutletScreen>
 
   // ── SCHEDULE TAB ──────────────────────────────────────
   Widget _buildScheduleTab() {
-    final textColor =
-    _isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
-    final mutedColor =
-    _isDark ? AppColors.textMuted : AppColors.lightTextMuted;
+    final textColor = _isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
+    final mutedColor = _isDark ? AppColors.textMuted : AppColors.lightTextMuted;
+    final surfaceColor = _isDark ? AppColors.surfaceLight : AppColors.lightSurface;
+    final borderColor = _isDark ? AppColors.border : AppColors.lightBorder;
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
       child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Schedule',
-                style: TextStyle(fontSize: 16,
-                    fontWeight: FontWeight.w700, color: textColor)),
-            const SizedBox(height: 4),
-            Text('Set when this outlet powers ON and OFF',
-                style: TextStyle(fontSize: 12, color: mutedColor)),
-            const SizedBox(height: 16),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.schedule_rounded,
+                  color: AppColors.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Schedules', style: TextStyle(
+                  fontSize: 17, fontWeight: FontWeight.w700, color: textColor)),
+              Text('Automate when this outlet powers on or off',
+                  style: TextStyle(fontSize: 12, color: mutedColor)),
+            ]),
+          ]),
 
-            // Existing schedules from backend
-            if (_loadingSchedules)
-              const Center(child: Padding(
-                padding: EdgeInsets.all(20),
-                child: CircularProgressIndicator(
-                    color: AppColors.primary, strokeWidth: 2),
-              ))
-            else if (_schedules.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: _isDark ? AppColors.surfaceLight
-                      : AppColors.lightSurface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _isDark
-                      ? AppColors.border : AppColors.lightBorder),
-                ),
-                child: Row(children: [
-                  Icon(Icons.schedule_rounded,
-                      color: mutedColor, size: 18),
-                  const SizedBox(width: 10),
-                  Text('No schedules yet. Add one below.',
-                      style: TextStyle(fontSize: 12,
-                          color: mutedColor)),
-                ]),
-              )
-            else
-              ..._schedules.map((s) => _buildScheduleCard(s)),
+          const SizedBox(height: 24),
 
-            const SizedBox(height: 16),
+          // Schedule list / empty / loading
+          if (_loadingSchedules)
+            Center(child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: CircularProgressIndicator(
+                  color: AppColors.primary, strokeWidth: 2),
+            ))
+          else if (_schedules.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
+              decoration: BoxDecoration(
+                color: surfaceColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: borderColor),
+              ),
+              child: Column(children: [
+                Icon(Icons.schedule_outlined, size: 36, color: mutedColor),
+                const SizedBox(height: 10),
+                Text('No schedules yet',
+                    style: TextStyle(fontSize: 14,
+                        fontWeight: FontWeight.w600, color: textColor)),
+                const SizedBox(height: 4),
+                Text('Tap the button below to create one',
+                    style: TextStyle(fontSize: 12, color: mutedColor)),
+              ]),
+            )
+          else
+            ..._schedules.map((s) => _buildScheduleCard(s)),
 
-            // Add new schedule button
-            SizedBox(
-              width: double.infinity, height: 50,
-              child: ElevatedButton.icon(
-                onPressed: () => _showAddScheduleSheet(),
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Add Schedule',
-                    style: TextStyle(fontWeight: FontWeight.w700)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
+          const SizedBox(height: 20),
+
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton.icon(
+              onPressed: _showAddScheduleSheet,
+              icon: const Icon(Icons.add_rounded, size: 20),
+              label: const Text('Add New Schedule',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
               ),
             ),
-          ]),
+          ),
+        ],
+      ),
     );
   }
-
   Widget _buildScheduleCard(Map<String, dynamic> schedule) {
-    final surfaceColor =
-    _isDark ? AppColors.surfaceLight : AppColors.lightSurface;
-    final borderColor =
-    _isDark ? AppColors.border : AppColors.lightBorder;
-    final textColor =
-    _isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
-    final mutedColor =
-    _isDark ? AppColors.textMuted : AppColors.lightTextMuted;
+    final textColor = _isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
+    final mutedColor = _isDark ? AppColors.textMuted : AppColors.lightTextMuted;
+    final surfaceColor = _isDark ? AppColors.surfaceLight : AppColors.lightSurface;
+    final borderColor = _isDark ? AppColors.border : AppColors.lightBorder;
 
-    final startTime = _formatScheduleTime(
-        schedule['start_time']?.toString() ?? '');
-    final endTime = schedule['end_time'] != null
-        ? _formatScheduleTime(schedule['end_time'].toString())
-        : 'Indefinite';
-    final repeat = schedule['repeat_pattern']?.toString() ?? 'daily';
+    final rawStart = schedule['start_time']?.toString() ?? '';
+    final rawEnd = schedule['end_time']?.toString();
+    final startTime = rawStart.isNotEmpty ? _formatScheduleTime(rawStart) : null;
+    final endTime = rawEnd != null ? _formatScheduleTime(rawEnd) : null;
+    final repeat = schedule['repeat_pattern']?.toString() ?? '';
     final scheduleId = schedule['id'] as int?;
 
+    // Build a human-readable summary line
+    String summary;
+    if (startTime != null && endTime != null) {
+      summary = 'ON at $startTime · OFF at $endTime';
+    } else if (startTime != null) {
+      summary = 'Turns ON at $startTime · runs indefinitely';
+    } else if (endTime != null) {
+      summary = 'Turns OFF at $endTime';
+    } else {
+      summary = 'Runs indefinitely';
+    }
+
+    final repeatLabel = repeat.isEmpty
+        ? 'No repeat'
+        : repeat[0].toUpperCase() + repeat.substring(1);
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: surfaceColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: borderColor),
       ),
-      child: Row(children: [
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Left accent bar
         Container(
-          width: 36, height: 36,
+          width: 4, height: 52,
           decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(2),
           ),
-          child: const Icon(Icons.schedule_rounded,
-              color: AppColors.primary, size: 18),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 14),
         Expanded(
           child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('$startTime → $endTime',
-                    style: TextStyle(fontSize: 13,
-                        fontWeight: FontWeight.w700, color: textColor)),
-                Text('Repeats $repeat',
-                    style: TextStyle(fontSize: 11, color: mutedColor)),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(summary, style: TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w700, color: textColor)),
+              const SizedBox(height: 4),
+              Row(children: [
+                Icon(Icons.repeat_rounded, size: 13, color: mutedColor),
+                const SizedBox(width: 4),
+                Text(repeatLabel,
+                    style: TextStyle(fontSize: 12, color: mutedColor)),
               ]),
+            ],
+          ),
         ),
         if (scheduleId != null)
           GestureDetector(
             onTap: () => _deleteSchedule(scheduleId),
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: AppColors.red.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.delete_rounded,
-                  color: AppColors.red, size: 16),
+            child: Padding(
+              padding: const EdgeInsets.only(left: 8, top: 2),
+              child: Icon(Icons.delete_outline_rounded,
+                  color: AppColors.red, size: 20),
             ),
           ),
       ]),
@@ -771,7 +735,9 @@ class _OutletScreenState extends State<OutletScreen>
 
   String _formatScheduleTime(String isoString) {
     try {
-      final dt = DateTime.parse(isoString);
+      // Parse without any timezone conversion, Backend already stores correct Tanzania time
+      final cleanString = isoString.replaceAll('Z', '').replaceAll('+03:00', '');
+      final dt = DateTime.parse(cleanString);
       final h = dt.hour;
       final m = dt.minute.toString().padLeft(2, '0');
       final period = h < 12 ? 'AM' : 'PM';
@@ -781,175 +747,407 @@ class _OutletScreenState extends State<OutletScreen>
       return isoString;
     }
   }
-
   void _showAddScheduleSheet() {
-    TimeOfDay? onTime;
-    TimeOfDay? offTime;
-    bool noEndTime = false;
+    TimeOfDay? startTime;
+    TimeOfDay? endTime;
+    bool isIndefinite = false;
+    String repeatPattern = 'daily';
+    bool isSaving = false;
 
     showModalBottomSheet(
       context: context,
-      backgroundColor:
-      _isDark ? AppColors.surface : AppColors.lightSurface,
+      backgroundColor: _isDark ? AppColors.surface : AppColors.lightSurface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
-              top: Radius.circular(20))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setModal) => Padding(
-          padding: EdgeInsets.fromLTRB(24, 16, 24,
-              MediaQuery.of(ctx).viewInsets.bottom + 24),
-          child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                      color: _isDark ? AppColors.border
-                          : AppColors.lightBorder,
-                      borderRadius: BorderRadius.circular(2)),
-                )),
-                const SizedBox(height: 16),
-                Text('Add Schedule',
-                    style: TextStyle(fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: _isDark ? AppColors.textPrimary
-                            : AppColors.lightTextPrimary)),
-                const SizedBox(height: 20),
+        builder: (ctx, setModal) {
+          final textColor = _isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
+          final mutedColor = _isDark ? AppColors.textMuted : AppColors.lightTextMuted;
+          final surfaceColor = _isDark ? AppColors.surfaceLight : AppColors.lightSurface;
+          final borderColor = _isDark ? AppColors.border : AppColors.lightBorder;
 
-                // ON Time picker
-                _timePicker(
-                  label: 'ON Time',
-                  icon: Icons.wb_sunny_rounded,
-                  color: AppColors.primary,
-                  time: onTime,
-                  onTap: () async {
-                    final picked = await showTimePicker(
-                        context: context,
-                        initialTime: TimeOfDay.now());
-                    if (picked != null) {
-                      setModal(() => onTime = picked);
-                    }
-                  },
+          // Reusable time display tile
+          Widget timeTile(TimeOfDay t, VoidCallback onTap, {bool isEnd = false}) {
+            return GestureDetector(
+              onTap: onTap,
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.07),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.25)),
                 ),
-                const SizedBox(height: 12),
-
-                // OFF Time picker
-                if (!noEndTime)
-                  _timePicker(
-                    label: 'OFF Time',
-                    icon: Icons.nightlight_rounded,
-                    color: AppColors.purple,
-                    time: offTime,
-                    onTap: () async {
-                      final picked = await showTimePicker(
-                          context: context,
-                          initialTime: const TimeOfDay(
-                              hour: 23, minute: 0));
-                      if (picked != null) {
-                        setModal(() => offTime = picked);
-                      }
-                    },
-                  ),
-
-                // No end time toggle (for devices like fridge)
-                Row(children: [
-                  Checkbox(
-                    value: noEndTime,
-                    onChanged: (v) =>
-                        setModal(() => noEndTime = v ?? false),
-                    activeColor: AppColors.primary,
-                  ),
-                  Text('No end time (runs indefinitely)',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: _isDark ? AppColors.textMuted
-                              : AppColors.lightTextMuted)),
+                child: Row(children: [
+                  Icon(isEnd ? Icons.power_settings_new_rounded
+                      : Icons.wb_sunny_rounded,
+                      color: AppColors.primary, size: 18),
+                  const SizedBox(width: 12),
+                  Text(t.format(ctx),
+                      style: const TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.w800,
+                          color: AppColors.primary)),
+                  const Spacer(),
+                  Icon(Icons.edit_rounded, color: mutedColor, size: 15),
                 ]),
+              ),
+            );
+          }
 
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity, height: 50,
-                  child: ElevatedButton(
-                    onPressed: onTime == null ? null : () async {
-                      Navigator.pop(ctx);
-                      await _saveSchedule(
-                          onTime!, noEndTime ? null : offTime);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('Save Schedule',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w700)),
-                  ),
-                ),
-              ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _timePicker({
-    required String label,
-    required IconData icon,
-    required Color color,
-    required TimeOfDay? time,
-    required VoidCallback onTap,
-  }) {
-    final surfaceColor =
-    _isDark ? AppColors.surfaceLight : AppColors.lightSurface;
-    final borderColor =
-    _isDark ? AppColors.border : AppColors.lightBorder;
-    final textColor =
-    _isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
-    final mutedColor =
-    _isDark ? AppColors.textMuted : AppColors.lightTextMuted;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: surfaceColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: borderColor),
-        ),
-        child: Row(children: [
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: color, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+                24, 12, 24, MediaQuery.of(ctx).viewInsets.bottom + 28),
+            child: Column(mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: TextStyle(
-                      fontSize: 11, color: mutedColor)),
-                  Text(
-                    time != null ? time.format(context) : 'Tap to set',
-                    style: TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w700,
-                        color: time != null ? color : mutedColor),
+                  // Handle
+                  Center(child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: borderColor,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  )),
+                  const SizedBox(height: 20),
+
+                  Text('Add Schedule', style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w800, color: textColor)),
+                  const SizedBox(height: 4),
+                  Text('Choose what to automate',
+                      style: TextStyle(fontSize: 12, color: mutedColor)),
+                  const SizedBox(height: 20),
+
+                  // ── Turn ON row ────────────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: surfaceColor,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: Column(children: [
+                      Row(children: [
+                        Container(
+                          width: 32, height: 32,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.wb_sunny_rounded,
+                              color: AppColors.primary, size: 16),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Turn ON', style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600,
+                                color: textColor)),
+                            Text('Set a start time',
+                                style: TextStyle(fontSize: 11, color: mutedColor)),
+                          ],
+                        )),
+                        Transform.scale(
+                          scale: 0.85,
+                          child: Switch(
+                            value: startTime != null,
+                            activeColor: Colors.white,
+                            activeTrackColor: AppColors.primary,
+                            inactiveThumbColor: Colors.white,
+                            inactiveTrackColor: mutedColor.withValues(alpha: 0.2),
+                            trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+                              if (states.contains(WidgetState.selected)) {
+                                return AppColors.primary;
+                              }
+                              return mutedColor.withValues(alpha: 0.3);
+                            }),
+                            onChanged: (val) async {
+                              if (val) {
+                                final t = await showTimePicker(
+                                    context: context,
+                                    initialTime: const TimeOfDay(hour: 7, minute: 0));
+                                if (t != null) setModal(() => startTime = t);
+                              } else {
+                                setModal(() => startTime = null);
+                              }
+                            },
+                          ),
+                        ),
+                      ]),
+                      if (startTime != null)
+                        timeTile(startTime!, () async {
+                          final t = await showTimePicker(
+                              context: context, initialTime: startTime!);
+                          if (t != null) setModal(() => startTime = t);
+                        }),
+                    ]),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // ── Turn OFF row ───────────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: surfaceColor,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: Column(children: [
+                      Row(children: [
+                        Container(
+                          width: 32, height: 32,
+                          decoration: BoxDecoration(
+                            color: (isIndefinite ? mutedColor : AppColors.red)
+                                .withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(Icons.power_settings_new_rounded,
+                              color: isIndefinite ? mutedColor : AppColors.red,
+                              size: 16),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Turn OFF', style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w600,
+                                color: isIndefinite ? mutedColor : textColor)),
+                            Text(isIndefinite
+                                ? 'Disabled — running indefinitely'
+                                : 'Set an end time',
+                                style: TextStyle(fontSize: 11, color: mutedColor)),
+                          ],
+                        )),
+                        Transform.scale(
+                          scale: 0.85,
+                          child: Switch(
+                            value: endTime != null && !isIndefinite,
+                            activeColor: Colors.white,
+                            activeTrackColor: AppColors.primary,
+                            inactiveThumbColor: Colors.white,
+                            inactiveTrackColor: mutedColor.withValues(alpha: 0.2),
+                            trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+                              if (states.contains(WidgetState.selected)) {
+                                return AppColors.primary;
+                              }
+                              return mutedColor.withValues(alpha: 0.3);
+                            }),
+                            onChanged: isIndefinite ? null : (val) async {
+                              if (val) {
+                                final t = await showTimePicker(
+                                    context: context,
+                                    initialTime: const TimeOfDay(hour: 22, minute: 0));
+                                if (t != null) setModal(() => endTime = t);
+                              } else {
+                                setModal(() => endTime = null);
+                              }
+                            },
+                          ),
+                        ),
+                      ]),
+                      if (endTime != null && !isIndefinite)
+                        timeTile(endTime!, () async {
+                          final t = await showTimePicker(
+                              context: context, initialTime: endTime!);
+                          if (t != null) setModal(() => endTime = t);
+                        }, isEnd: true),
+                    ]),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // ── Run indefinitely ───────────────────────────────
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: surfaceColor,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isIndefinite
+                            ? AppColors.primary.withValues(alpha: 0.4)
+                            : borderColor,
+                      ),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        width: 32, height: 32,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(
+                              alpha: isIndefinite ? 0.15 : 0.07),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.all_inclusive_rounded,
+                            color: AppColors.primary, size: 16),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Run indefinitely', style: TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w600,
+                              color: textColor)),
+                          Text('Stays on until manually turned off',
+                              style: TextStyle(fontSize: 11, color: mutedColor)),
+                        ],
+                      )),
+                    Transform.scale(
+                      scale: 0.85,
+                      child: Switch(
+                        value: isIndefinite,
+                        activeColor: Colors.white,
+                        activeTrackColor: AppColors.primary,
+                        inactiveThumbColor: Colors.white,
+                        inactiveTrackColor: mutedColor.withValues(alpha: 0.2),
+                        trackOutlineColor: WidgetStateProperty.resolveWith((states) {
+                          if (states.contains(WidgetState.selected)) {
+                            return AppColors.primary;
+                          }
+                          return mutedColor.withValues(alpha: 0.3);
+                        }),
+                        onChanged: (val) => setModal(() {
+                          isIndefinite = val;
+                          if (val) endTime = null;
+                        }),
+                      ),
+                    ),
+                    ]),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── Repeat ─────────────────────────────────────────
+                  Text('REPEAT', style: TextStyle(
+                      fontSize: 10, color: mutedColor,
+                      fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      {'label': 'Daily', 'value': 'daily'},
+                      {'label': 'Weekly', 'value': 'weekly'},
+                      {'label': 'Once', 'value': 'once'},
+                      {'label': 'None', 'value': ''},
+                    ].map((opt) {
+                      final selected = repeatPattern == opt['value'];
+                      return Expanded(
+                        child: GestureDetector(
+                          onTap: () => setModal(() => repeatPattern = opt['value']!),
+                          child: Container(
+                            margin: const EdgeInsets.only(right: 6),
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? AppColors.primary.withValues(alpha: 0.12)
+                                  : surfaceColor,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: selected ? AppColors.primary : borderColor,
+                              ),
+                            ),
+                            child: Text(opt['label']!,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w600,
+                                  color: selected ? AppColors.primary : mutedColor,
+                                )),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // ── Save button ────────────────────────────────────
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: isSaving ? null : () async {
+                        if (_backendId == null) {
+                          _showSnack('Cannot save — device not synced with backend',
+                              AppColors.red);
+                          return;
+                        }
+                        if (startTime == null && endTime == null && !isIndefinite) {
+                          _showSnack('Set a start time, end time, or choose Run Indefinitely.',
+                              AppColors.red);
+                          return;
+                        }
+                        setModal(() => isSaving = true);
+
+                        final now = DateTime.now();
+                        String? startIso;
+                        String? endIso;
+
+                        DateTime? startDt;
+                        if (startTime != null) {
+                          startDt = DateTime(now.year, now.month,
+                              now.day, startTime!.hour, startTime!.minute);
+                          // If time already passed today, schedule for tomorrow
+                          if (startDt.isBefore(now)) {
+                            startDt = startDt.add(const Duration(days: 1));
+                          }
+                          startIso = _toTzString(startDt);
+                        }
+
+                        if (endTime != null && !isIndefinite) {
+                          var endDt = DateTime(now.year, now.month,
+                              now.day, endTime!.hour, endTime!.minute);
+
+                          if (startDt != null) {
+                            // If end is before start, it must be the next day
+                            if (endDt.isBefore(startDt)) {
+                              endDt = endDt.add(const Duration(days: 1));
+                            }
+                          } else {
+                            // Only OFF time set, check against now
+                            if (endDt.isBefore(now)) {
+                              endDt = endDt.add(const Duration(days: 1));
+                            }
+                          }
+                          endIso = _toTzString(endDt);
+                        }
+
+                        try {
+                          await _api.saveSchedule(
+                            deviceId: _backendId!,
+                            startTime: startIso,
+                            endTime: endIso,
+                            repeatPattern: repeatPattern,
+                          );
+                          if (mounted) Navigator.pop(context);
+                          _fetchSchedules();
+                        } catch (e) {
+                          setModal(() => isSaving = false);
+                          _showSnack('Failed to save schedule. Try again.', AppColors.red);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: isSaving
+                          ? const SizedBox(width: 20, height: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                          : const Text('Save Schedule',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                    ),
                   ),
                 ]),
-          ),
-          Icon(Icons.edit_rounded, color: mutedColor, size: 16),
-        ]),
+          );
+        },
       ),
     );
-  }
+}
 
-  // ── HISTORY TAB ───────────────────────────────────────
+   // ── HISTORY TAB ───────────────────────────────────────
   Widget _buildHistoryTab() {
     final textColor =
     _isDark ? AppColors.textPrimary : AppColors.lightTextPrimary;
@@ -961,7 +1159,7 @@ class _OutletScreenState extends State<OutletScreen>
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(
-              color: AppColors.primary, strokeWidth: 2));
+              color: AppColors.primary, strokeWidth: 5));
         }
 
         if (snapshot.hasError || !snapshot.hasData) {
@@ -995,11 +1193,7 @@ class _OutletScreenState extends State<OutletScreen>
                   color: mutedColor, size: 32),
               const SizedBox(height: 8),
               Text('No activity yet',
-                  style: TextStyle(
-                      color: mutedColor, fontSize: 12)),
-              Text('Activity appears when outlet is used',
-                  style: TextStyle(
-                      color: mutedColor, fontSize: 10)),
+                  style: TextStyle(color: mutedColor, fontSize: 12)),
             ]),
           );
         }
@@ -1038,8 +1232,8 @@ class _OutletScreenState extends State<OutletScreen>
                   width: 36, height: 36,
                   decoration: BoxDecoration(
                     color: isOn
-                        ? AppColors.primary.withValues(alpha: 0.1)
-                        : AppColors.red.withValues(alpha: 0.1),
+                        ? AppColors.primary.withOpacity(0.1)
+                        : AppColors.red.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
@@ -1078,12 +1272,33 @@ class _OutletScreenState extends State<OutletScreen>
       },
     );
   }
+  String _timeAgo(DateTime dt) {
+    try {
+      final now = DateTime.now();
+      final diff = now.difference(dt);
 
-  String _timeAgo(DateTime time) {
-    final diff = DateTime.now().difference(time);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    return '${diff.inDays}d ago';
+      if (diff.inSeconds < 0) return 'just now';
+      if (diff.inMinutes < 1) return 'just now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return '${diff.inHours}h ago';
+      if (diff.inDays == 1) return 'Yesterday';
+      if (diff.inDays < 7) return '${diff.inDays} days ago';
+
+      final day   = dt.day.toString().padLeft(2, '0');
+      final month = dt.month.toString().padLeft(2, '0');
+      final hour  = dt.hour.toString().padLeft(2, '0');
+      final min   = dt.minute.toString().padLeft(2, '0');
+      return '$day/$month $hour:$min';
+    } catch (_) {
+      return dt.toString();
+    }
+  }
+
+  // ─── BOTTOM NAV ──────
+  Widget _buildBottomNav() {
+    return BottomNavWidget(
+      selectedIndex: _selectedIndex,
+      onTap: (i) => setState(() => _selectedIndex = i),
+    );
   }
 }

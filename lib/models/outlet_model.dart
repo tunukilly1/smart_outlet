@@ -1,3 +1,5 @@
+enum ScheduleMode { none, indefinite, startOnly, endOnly, startAndEnd }
+
 class OutletModel {
   final String id;
   int? backendId;       // Real backend integer ID e.g. 5
@@ -7,8 +9,8 @@ class OutletModel {
   double watts;
   double kwhToday;
   int runtimeMinutes;
-  String onTime;
-  String offTime;
+  String? onTime;
+  String? offTime;
   String deviceName;
   String deviceType;
   String roomName;
@@ -16,6 +18,10 @@ class OutletModel {
   String wifiName;
   String wifiPassword;
   int wifiSignalStrength;
+  bool isIndefinite;
+  String? claimCode;
+  bool isClaimed = false;
+  String? claimExpiresAt;
 
   OutletModel({
     required this.id,
@@ -26,8 +32,8 @@ class OutletModel {
     this.watts = 0.0,
     this.kwhToday = 0.0,
     this.runtimeMinutes = 0,
-    this.onTime = '',    // empty — loaded from backend schedule
-    this.offTime = '',   // empty — loaded from backend schedule
+    this.onTime,
+    this.offTime,
     this.deviceName = 'Empty',
     this.deviceType = 'empty',
     this.roomName = '',
@@ -35,6 +41,10 @@ class OutletModel {
     this.wifiName = '',
     this.wifiPassword = '',
     this.wifiSignalStrength = 0,
+    this.isIndefinite = false,
+    this.isClaimed = true,
+    this.claimCode,
+    this.claimExpiresAt,
   });
 
   // ── CREATE FROM BACKEND JSON ───────────────────────
@@ -67,6 +77,10 @@ class OutletModel {
       runtimeMinutes: json['runtime_minutes'] is int
           ? json['runtime_minutes'] as int
           : 0,
+      isClaimed: json['is_claimed'] == true ||
+          json['claimed'] == true ||
+          (json['claim_code'] == null),
+      claimCode: json['claim_code']?.toString(),
     );
   }
 
@@ -89,6 +103,14 @@ class OutletModel {
     if (value is double) return value;
     if (value is int) return value.toDouble();
     return double.tryParse(value.toString()) ?? 0.0;
+  }
+
+  ScheduleMode get scheduleMode {
+    if (onTime == null && offTime == null) return ScheduleMode.none;
+    if (isIndefinite) return ScheduleMode.indefinite;
+    if (onTime != null && offTime == null) return ScheduleMode.startOnly;
+    if (onTime == null && offTime != null) return ScheduleMode.endOnly;
+    return ScheduleMode.startAndEnd;
   }
 
   // ── HELPERS ───────────────────────────────────────
@@ -117,6 +139,8 @@ class OutletModel {
 
   String get kwhFormatted =>
       '${kwhToday.toStringAsFixed(2)} kWh';
+
+  String get status => wifiConnected ? 'online' : 'offline';
 
   String get statusText {
     if (isEmpty) return 'Empty outlet';
