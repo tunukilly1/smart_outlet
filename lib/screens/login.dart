@@ -119,7 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     border: Border.all(
                         color: AppColors.amber.withOpacity(0.3)),
                   ),
-
+                ),
 
                 const SizedBox(height: 24),
                 _FieldLabel(label: 'Username'),
