@@ -109,18 +109,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(fontSize: 14,
                         color: context.textMuted)),
 
-                // Server wake up notice
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.amber.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: AppColors.amber.withOpacity(0.3)),
-                  ),
-                ),
-
                 const SizedBox(height: 24),
                 _FieldLabel(label: 'Username'),
                 _InputField(

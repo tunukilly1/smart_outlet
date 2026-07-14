@@ -163,18 +163,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   style: TextStyle(fontSize: 13,
                       color: context.textMuted)),
 
-              // Server notice
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.amber.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.amber
-                      .withOpacity(0.3)),
-                ),
-              ),
-
               const SizedBox(height: 20),
               _label('Username'),
               _field(_usernameController, 'e.g. JohnDoe',
