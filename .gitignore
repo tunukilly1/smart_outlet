@@ -69,7 +69,6 @@ android/build/
 *.swp
 *.swo
 *.DS_Store
-
 # IDE files
 .idea/
 .vscode/
