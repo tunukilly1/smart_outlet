@@ -1,4 +1,4 @@
 [build]
-command = "bash ./netlify_build.sh"
+command = "flutter build web"
 publish = "build/web"
 
