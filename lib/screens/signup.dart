@@ -173,16 +173,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   border: Border.all(color: AppColors.amber
                       .withOpacity(0.3)),
                 ),
-                child: const Row(children: [
-                  Icon(Icons.info_outline_rounded,
-                      size: 13, color: AppColors.amber),
-                  SizedBox(width: 8),
-                  Expanded(child: Text(
-                    'First request may take 30-60 seconds.',
-                    style: TextStyle(fontSize: 11,
-                        color: AppColors.amber),
-                  )),
-                ]),
               ),
 
               const SizedBox(height: 20),

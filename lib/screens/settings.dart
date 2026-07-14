@@ -87,10 +87,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             : Icons.dark_mode_rounded,
                         iconBg: AppColors.amber.withValues(alpha: 0.15),
                         iconColor: AppColors.amber,
-                        label: _isLight ? 'Light Mode' : 'Dark Mode',
+                        label: _isLight ?  : 'Dark Mode', 'Light Mode'
                         subtitle: _isLight
-                            ? 'Tap to switch to dark'
                             : 'Tap to switch to light',
+                          ? 'Tap to switch to dark'
                         trailing: Switch(
                           value: _isLight,
                           onChanged: (_) => _themeProvider.toggleTheme(),

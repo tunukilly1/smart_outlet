@@ -119,17 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     border: Border.all(
                         color: AppColors.amber.withOpacity(0.3)),
                   ),
-                  child: const Row(children: [
-                    Icon(Icons.info_outline_rounded,
-                        size: 14, color: AppColors.amber),
-                    SizedBox(width: 8),
-                    Expanded(child: Text(
-                      'First login may take 30-60 seconds as the server wakes up.',
-                      style: TextStyle(fontSize: 11,
-                          color: AppColors.amber, height: 1.4),
-                    )),
-                  ]),
-                ),
+
 
                 const SizedBox(height: 24),
                 _FieldLabel(label: 'Username'),

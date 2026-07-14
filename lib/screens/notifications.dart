@@ -234,6 +234,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }).length;
 
   Color _filterColor(String type) {
+    if (type == 'OVERCURRENT') return AppColors.primary;
     if (type == 'OVERLOAD') return AppColors.red;
     if (type == 'OVERVOLTAGE') return AppColors.amber;
     return AppColors.primary;
@@ -241,55 +242,125 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   // ── ALERT CARD ────────────────────────────────────
   Widget _buildAlertCard(Map<String, dynamic> alert) {
-    // Parse alert type — backend may use 'alert_type' or 'type'
-    final rawType = (alert['alert_type'] ?? alert['type'] ?? '')
-        .toString().toUpperCase();
-    final isOverload = rawType.contains('OVERLOAD');
-    final isOvervoltage = rawType.contains('VOLTAGE');
+    // ── 1. Read alert_type directly from the API response ──────────────────
+    // Backend returns: "undervoltage", "overvoltage", "overcurrent", "overload"
+    final String rawType =
+    (alert['alert_type'] ?? alert['type'] ?? '').toString().toLowerCase();
 
-    final Color alertColor = isOverload
-        ? AppColors.red
-        : isOvervoltage
-        ? AppColors.amber
-        : AppColors.primary;
+    // ── 2. Derive colour, icon, and display title from alert_type ──────────
+    Color alertColor;
+    IconData alertIcon;
+    String alertTitle;
 
-    final IconData alertIcon = isOverload
-        ? Icons.bolt_rounded
-        : isOvervoltage
-        ? Icons.electric_bolt_rounded
-        : Icons.warning_rounded;
+    switch (rawType) {
+      case 'overcurrent':
+        alertColor = AppColors.red;
+        alertIcon = Icons.bolt_rounded;
+        alertTitle = 'Overcurrent Detected';
+        break;
+      case 'overload':
+        alertColor = AppColors.red;
+        alertIcon = Icons.bolt_rounded;
+        alertTitle = 'Overload Detected';
+        break;
+      case 'overvoltage':
+        alertColor = AppColors.amber;
+        alertIcon = Icons.electric_bolt_rounded;
+        alertTitle = 'Overvoltage Detected';
+        break;
+      case 'undervoltage':
+        alertColor = AppColors.amber;
+        alertIcon = Icons.electric_bolt_rounded;
+        alertTitle = 'Undervoltage Detected';
+        break;
+      default:
+        alertColor = AppColors.primary;
+        alertIcon = Icons.warning_rounded;
+        // If backend sends an unexpected type, still show it as-is
+        alertTitle = rawType.isNotEmpty
+            ? '${rawType[0].toUpperCase()}${rawType.substring(1)} Detected'
+            : 'Safety Alert';
+    }
 
-    final String alertTitle = isOverload
-        ? 'Overload Detected'
-        : isOvervoltage
-        ? 'Overvoltage Detected'
-        : rawType.isNotEmpty
-        ? rawType
-        : 'Safety Alert';
+    // ── 3. Correct unit per alert type ─────────────────────────────────────
+    final String unit;
+    switch (rawType) {
+      case 'overcurrent':
+        unit = 'A';
+        break;
+      case 'overload':
+        unit = 'W';
+        break;
+      case 'overvoltage':
+      case 'undervoltage':
+        unit = 'V';
+        break;
+      default:
+        unit = '';
+    }
 
-    // Parse values — backend may use different field names
-    final double measuredValue = _toDouble(
-        alert['measured_value'] ??
-            alert['value'] ??
-            alert['power'] ??
-            alert['voltage']);
+    // ── 4. Correct threshold default per alert type ─────────────────────────
+    final double defaultThreshold;
+    switch (rawType) {
+      case 'overcurrent':
+        defaultThreshold = 7.0;
+        break;
+      case 'overload':
+        defaultThreshold = 3000.0;
+        break;
+      case 'overvoltage':
+        defaultThreshold = 260.0;
+        break;
+      case 'undervoltage':
+        defaultThreshold = 170.0;
+        break;
+      default:
+        defaultThreshold = 0.0;
+    }
+
+    // ── 5. Read values — always use measured_value first ───────────────────
+    final double measuredValue =
+    _toDouble(alert['measured_value'] ?? alert['value'] ?? 0);
 
     final double threshold = _toDouble(
-        alert['threshold'] ??
-            alert['threshold_value'] ??
-            (isOverload ? 3000 : 260));
+        alert['threshold_value'] ??
+            alert['threshold'] ??
+            defaultThreshold);
 
-    final String deviceName = (alert['device_name'] ??
-        alert['device'] ??
-        'Unknown Device').toString();
+    // ── 6. Device name and timestamp ────────────────────────────────────────
+    final String deviceName =
+    (alert['device_name'] ?? alert['device'] ?? 'Device ${alert['device_id'] ?? ''}')
+        .toString();
 
-    final String timeRaw = (alert['timestamp'] ??
-        alert['created_at'] ??
-        alert['time'] ?? '').toString();
+    final String timeRaw =
+    (alert['timestamp'] ?? alert['created_at'] ?? alert['time'] ?? '')
+        .toString();
     final DateTime? time = _parseTimeOrNull(timeRaw);
 
-    final String unit = isOverload ? 'W' : 'V';
+    // ── 7. Advice message per alert type ───────────────────────────────────
+    final String adviceText;
+    switch (rawType) {
+      case 'overcurrent':
+        adviceText =
+        'Current exceeded ${threshold.toStringAsFixed(1)}A. Unplug high-draw appliances immediately to protect the outlet.';
+        break;
+      case 'overload':
+        adviceText =
+        'Power draw exceeded ${threshold.toStringAsFixed(0)}W. Unplug high-wattage devices immediately to prevent damage.';
+        break;
+      case 'overvoltage':
+        adviceText =
+        'Voltage exceeded ${threshold.toStringAsFixed(0)}V (Tanzania standard: 220–240V). Check your power supply.';
+        break;
+      case 'undervoltage':
+        adviceText =
+        'Voltage dropped below ${threshold.toStringAsFixed(0)}V. This may damage sensitive appliances.';
+        break;
+      default:
+        adviceText = 'An abnormal electrical condition was detected. Please check your outlet.';
+    }
 
+    // ── 8. Build card UI (unchanged from your original) ────────────────────
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -300,14 +371,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       child: Column(children: [
         // Alert header strip
         Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
             color: alertColor.withValues(alpha: 0.08),
-            borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16)),
-            border: Border(
-                left: BorderSide(color: alertColor, width: 4)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            border: Border(left: BorderSide(color: alertColor, width: 4)),
           ),
           child: Row(children: [
             Container(
@@ -329,12 +397,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           fontWeight: FontWeight.w700,
                           color: alertColor)),
                   Text(deviceName,
-                      style: TextStyle(
-                          fontSize: 11, color: _textMuted)),
+                      style: TextStyle(fontSize: 11, color: _textMuted)),
                 ],
               ),
             ),
-            // Time ago
             Text(
               time != null ? _timeAgo(time) : '',
               style: TextStyle(fontSize: 11, color: _textMuted),
@@ -355,7 +421,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               const SizedBox(width: 10),
               Expanded(child: _detailChip(
                 label: 'Threshold',
-                value: '${threshold.toStringAsFixed(0)} $unit',
+                value: '${threshold.toStringAsFixed(1)} $unit',
                 color: _textMuted,
               )),
               const SizedBox(width: 10),
@@ -368,38 +434,28 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             if (time != null) ...[
               const SizedBox(height: 10),
               Row(children: [
-                Icon(Icons.access_time_rounded,
-                    size: 12, color: _textMuted),
+                Icon(Icons.access_time_rounded, size: 12, color: _textMuted),
                 const SizedBox(width: 4),
                 Text(_formatFullTime(time),
-                    style: TextStyle(
-                        fontSize: 11, color: _textMuted)),
+                    style: TextStyle(fontSize: 11, color: _textMuted)),
               ]),
             ],
             const SizedBox(height: 10),
-            // What to do
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: alertColor.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: alertColor.withValues(alpha: 0.15)),
+                border: Border.all(color: alertColor.withValues(alpha: 0.15)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline_rounded,
-                      size: 13, color: alertColor),
+                  Icon(Icons.info_outline_rounded, size: 13, color: alertColor),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      isOverload
-                          ? 'Power draw exceeded 3000W. Unplug high-wattage devices immediately to prevent damage.'
-                          : 'Voltage exceeded 260V (Tanzania standard: 220–240V). Check your power supply.',
-                      style: TextStyle(
-                          fontSize: 11, color: _textMuted),
-                    ),
+                    child: Text(adviceText,
+                        style: TextStyle(fontSize: 11, color: _textMuted)),
                   ),
                 ],
               ),
