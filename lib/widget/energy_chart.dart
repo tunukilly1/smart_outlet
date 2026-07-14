@@ -623,10 +623,11 @@ class _InteractiveChartPainter extends CustomPainter {
       final badgeW = valueTp.width + 12;
       final badgeH = 18.0;
       var badgeX = x - badgeW / 2;
-      final badgeY = y - badgeH - 8;
+      var badgeY = y - badgeH - 8;
 
       // Keep badge inside chart bounds
       badgeX = badgeX.clamp(0, size.width - badgeW);
+      badgeY = badgeY.clamp(2.0, chartH - badgeH);
 
       final badgeRect = RRect.fromRectAndRadius(
         Rect.fromLTWH(badgeX, badgeY, badgeW, badgeH),

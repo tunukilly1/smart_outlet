@@ -175,8 +175,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                 ],
               ]),
-              Text('Overcurrent, overload, voltage events',
-                  style: TextStyle(fontSize: 12, color: _textMuted)),
             ],
           ),
         ),
