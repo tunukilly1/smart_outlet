@@ -16,21 +16,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _isLoading = true;
   String _error = '';
   List<Map<String, dynamic>> _alerts = [];
-
-  // Filter state
-  String _filter = 'ALL'; // ALL, OVERLOAD, OVERVOLTAGE
+  String _filter = 'all';
 
   bool get _isLight => _theme.isLight;
-  Color get _bg =>
-      _isLight ? AppColors.lightBackground : AppColors.background;
-  Color get _surface =>
-      _isLight ? AppColors.lightSurface : AppColors.surfaceColor;
-  Color get _border =>
-      _isLight ? AppColors.lightBorder : AppColors.border;
-  Color get _textPrimary =>
-      _isLight ? AppColors.lightTextPrimary : AppColors.textPrimary;
-  Color get _textMuted =>
-      _isLight ? AppColors.lightTextMuted : AppColors.textMuted;
+  Color get _bg => _isLight ? AppColors.lightBackground : AppColors.background;
+  Color get _surface => _isLight ? AppColors.lightSurface : AppColors.surfaceColor;
+  Color get _border => _isLight ? AppColors.lightBorder : AppColors.border;
+  Color get _textPrimary => _isLight ? AppColors.lightTextPrimary : AppColors.textPrimary;
+  Color get _textMuted => _isLight ? AppColors.lightTextMuted : AppColors.textMuted;
 
   @override
   void initState() {
@@ -43,7 +36,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     setState(() { _isLoading = true; _error = ''; });
     try {
       final data = await _api.getAlerts();
-      // Sort newest first
       final list = List<Map<String, dynamic>>.from(
           data.map((e) => Map<String, dynamic>.from(e)));
       list.sort((a, b) {
@@ -62,23 +54,52 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   DateTime _parseTime(String raw) {
     try {
-      final clean = raw
+      return DateTime.parse(raw
           .replaceAll('Z', '')
           .replaceAll('+00:00', '')
-          .replaceAll('+03:00', '');
-      return DateTime.parse(clean);
+          .replaceAll('+03:00', ''));
     } catch (_) {
       return DateTime(2000);
     }
   }
 
+  DateTime _parseTimeOrNull(String raw) {
+    try {
+      return DateTime.parse(raw
+          .replaceAll('Z', '')
+          .replaceAll('+00:00', '')
+          .replaceAll('+03:00', ''));
+    } catch (_) {
+      return DateTime.now();
+    }
+  }
+
   List<Map<String, dynamic>> get _filtered {
-    if (_filter == 'ALL') return _alerts;
+    if (_filter == 'all') return _alerts;
     return _alerts.where((a) {
-      final type = (a['alert_type'] ?? a['type'] ?? '')
-          .toString().toUpperCase();
-      return type.contains(_filter);
+      return (a['alert_type'] ?? a['type'] ?? '')
+          .toString()
+          .toLowerCase() == _filter;
     }).toList();
+  }
+
+  int _countOf(String type) => _alerts.where((a) {
+    return (a['alert_type'] ?? a['type'] ?? '')
+        .toString()
+        .toLowerCase() == type;
+  }).length;
+
+  Color _alertColor(String type) {
+    switch (type) {
+      case 'overcurrent':
+      case 'overload':
+        return AppColors.red;
+      case 'overvoltage':
+      case 'undervoltage':
+        return AppColors.amber;
+      default:
+        return AppColors.primary;
+    }
   }
 
   @override
@@ -94,8 +115,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               onRefresh: _fetchAlerts,
               color: AppColors.primary,
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(
-                  color: AppColors.primary))
+                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
                   : _error.isNotEmpty
                   ? _buildError()
                   : _filtered.isEmpty
@@ -103,8 +123,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   : ListView.builder(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
                 itemCount: _filtered.length,
-                itemBuilder: (_, i) =>
-                    _buildAlertCard(_filtered[i]),
+                itemBuilder: (_, i) => _buildAlertCard(_filtered[i]),
               ),
             ),
           ),
@@ -113,9 +132,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  // ── HEADER ───────────────────────────────────────
   Widget _buildHeader() {
-    final unread = _alerts.length;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
       child: Row(children: [
@@ -128,8 +145,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: _border),
             ),
-            child: Icon(Icons.arrow_back_rounded,
-                color: _textPrimary, size: 18),
+            child: Icon(Icons.arrow_back_rounded, color: _textPrimary, size: 18),
           ),
         ),
         const SizedBox(width: 14),
@@ -143,16 +159,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
                         color: _textPrimary)),
-                if (unread > 0) ...[
+                if (_alerts.isNotEmpty) ...[
                   const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: AppColors.red,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text('$unread',
+                    child: Text('${_alerts.length}',
                         style: const TextStyle(
                             fontSize: 11,
                             color: Colors.white,
@@ -160,7 +175,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                 ],
               ]),
-              Text('Overvoltage & overload events',
+              Text('Overcurrent, overload, voltage events',
                   style: TextStyle(fontSize: 12, color: _textMuted)),
             ],
           ),
@@ -174,47 +189,44 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: _border),
             ),
-            child: Icon(Icons.refresh_rounded,
-                color: _textMuted, size: 18),
+            child: Icon(Icons.refresh_rounded, color: _textMuted, size: 18),
           ),
         ),
       ]),
     );
   }
 
-  // ── FILTER ROW ────────────────────────────────────
   Widget _buildFilterRow() {
-    final options = ['ALL', 'OVERLOAD', 'OVERVOLTAGE'];
+    final filters = ['all', 'overcurrent', 'overload', 'overvoltage', 'undervoltage'];
+    final labels = {
+      'all': 'All (${_alerts.length})',
+      'overcurrent': 'Overcurrent (${_countOf('overcurrent')})',
+      'overload': 'Overload (${_countOf('overload')})',
+      'overvoltage': 'Overvoltage (${_countOf('overvoltage')})',
+      'undervoltage': 'Undervoltage (${_countOf('undervoltage')})',
+    };
+
     return Container(
       height: 38,
       margin: const EdgeInsets.fromLTRB(20, 0, 20, 10),
       child: ListView(
         scrollDirection: Axis.horizontal,
-        children: options.map((opt) {
-          final active = _filter == opt;
+        children: filters.map((f) {
+          final active = _filter == f;
+          final color = f == 'all' ? AppColors.primary : _alertColor(f);
           return GestureDetector(
-            onTap: () => setState(() => _filter = opt),
+            onTap: () => setState(() => _filter = f),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
-                color: active
-                    ? _filterColor(opt)
-                    : _surface,
+                color: active ? color : _surface,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                    color: active
-                        ? _filterColor(opt)
-                        : _border),
+                border: Border.all(color: active ? color : _border),
               ),
               child: Text(
-                opt == 'ALL'
-                    ? 'All (${_alerts.length})'
-                    : opt == 'OVERLOAD'
-                    ? 'Overload (${_countOf('OVERLOAD')})'
-                    : 'Overvoltage (${_countOf('OVERVOLTAGE')})',
+                labels[f]!,
                 style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -227,27 +239,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  int _countOf(String type) => _alerts.where((a) {
-    final t = (a['alert_type'] ?? a['type'] ?? '')
-        .toString().toUpperCase();
-    return t.contains(type);
-  }).length;
-
-  Color _filterColor(String type) {
-    if (type == 'OVERCURRENT') return AppColors.primary;
-    if (type == 'OVERLOAD') return AppColors.red;
-    if (type == 'OVERVOLTAGE') return AppColors.amber;
-    return AppColors.primary;
-  }
-
-  // ── ALERT CARD ────────────────────────────────────
   Widget _buildAlertCard(Map<String, dynamic> alert) {
-    // ── 1. Read alert_type directly from the API response ──────────────────
-    // Backend returns: "undervoltage", "overvoltage", "overcurrent", "overload"
     final String rawType =
     (alert['alert_type'] ?? alert['type'] ?? '').toString().toLowerCase();
 
-    // ── 2. Derive colour, icon, and display title from alert_type ──────────
     Color alertColor;
     IconData alertIcon;
     String alertTitle;
@@ -276,13 +271,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       default:
         alertColor = AppColors.primary;
         alertIcon = Icons.warning_rounded;
-        // If backend sends an unexpected type, still show it as-is
         alertTitle = rawType.isNotEmpty
             ? '${rawType[0].toUpperCase()}${rawType.substring(1)} Detected'
             : 'Safety Alert';
     }
 
-    // ── 3. Correct unit per alert type ─────────────────────────────────────
     final String unit;
     switch (rawType) {
       case 'overcurrent':
@@ -299,7 +292,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         unit = '';
     }
 
-    // ── 4. Correct threshold default per alert type ─────────────────────────
     final double defaultThreshold;
     switch (rawType) {
       case 'overcurrent':
@@ -318,26 +310,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         defaultThreshold = 0.0;
     }
 
-    // ── 5. Read values — always use measured_value first ───────────────────
     final double measuredValue =
     _toDouble(alert['measured_value'] ?? alert['value'] ?? 0);
 
     final double threshold = _toDouble(
-        alert['threshold_value'] ??
-            alert['threshold'] ??
-            defaultThreshold);
+        alert['threshold_value'] ?? alert['threshold'] ?? defaultThreshold);
 
-    // ── 6. Device name and timestamp ────────────────────────────────────────
     final String deviceName =
     (alert['device_name'] ?? alert['device'] ?? 'Device ${alert['device_id'] ?? ''}')
         .toString();
 
     final String timeRaw =
-    (alert['timestamp'] ?? alert['created_at'] ?? alert['time'] ?? '')
-        .toString();
-    final DateTime? time = _parseTimeOrNull(timeRaw);
+    (alert['timestamp'] ?? alert['created_at'] ?? alert['time'] ?? '').toString();
+    final DateTime time = _parseTimeOrNull(timeRaw);
 
-    // ── 7. Advice message per alert type ───────────────────────────────────
     final String adviceText;
     switch (rawType) {
       case 'overcurrent':
@@ -360,7 +346,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         adviceText = 'An abnormal electrical condition was detected. Please check your outlet.';
     }
 
-    // ── 8. Build card UI (unchanged from your original) ────────────────────
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -369,7 +354,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         border: Border.all(color: _border),
       ),
       child: Column(children: [
-        // Alert header strip
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
@@ -401,14 +385,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ],
               ),
             ),
-            Text(
-              time != null ? _timeAgo(time) : '',
-              style: TextStyle(fontSize: 11, color: _textMuted),
-            ),
+            Text(_timeAgo(time),
+                style: TextStyle(fontSize: 11, color: _textMuted)),
           ]),
         ),
-
-        // Alert details
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(children: [
@@ -431,15 +411,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 color: alertColor,
               )),
             ]),
-            if (time != null) ...[
-              const SizedBox(height: 10),
-              Row(children: [
-                Icon(Icons.access_time_rounded, size: 12, color: _textMuted),
-                const SizedBox(width: 4),
-                Text(_formatFullTime(time),
-                    style: TextStyle(fontSize: 11, color: _textMuted)),
-              ]),
-            ],
+            const SizedBox(height: 10),
+            Row(children: [
+              Icon(Icons.access_time_rounded, size: 12, color: _textMuted),
+              const SizedBox(width: 4),
+              Text(_formatFullTime(time),
+                  style: TextStyle(fontSize: 11, color: _textMuted)),
+            ]),
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.all(10),
@@ -472,8 +450,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.07),
         borderRadius: BorderRadius.circular(8),
@@ -485,14 +462,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 fontWeight: FontWeight.w700,
                 color: color)),
         Text(label,
-            style: TextStyle(
-                fontSize: 9,
-                color: _textMuted)),
+            style: TextStyle(fontSize: 9, color: _textMuted)),
       ]),
     );
   }
 
-  // ── EMPTY STATE ───────────────────────────────────
   Widget _buildEmpty() {
     return ListView(children: [
       SizedBox(
@@ -511,9 +485,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              _filter == 'ALL'
-                  ? 'No safety alerts'
-                  : 'No $_filter alerts',
+              _filter == 'all' ? 'No safety alerts' : 'No ${_filter} alerts',
               style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
@@ -521,34 +493,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              _filter == 'ALL'
+              _filter == 'all'
                   ? 'All outlets are within safe electrical limits'
                   : 'No events of this type recorded',
-              style: TextStyle(
-                  fontSize: 13, color: _textMuted),
+              style: TextStyle(fontSize: 13, color: _textMuted),
               textAlign: TextAlign.center,
             ),
-
           ],
         ),
       ),
     ]);
   }
 
-  Widget _thresholdRow(
-      IconData icon, Color color, String label, String value) {
-    return Row(children: [
-      Icon(icon, size: 14, color: color),
-      const SizedBox(width: 6),
-      Text('$label: ',
-          style: TextStyle(fontSize: 12, color: _textPrimary,
-              fontWeight: FontWeight.w600)),
-      Text(value,
-          style: TextStyle(fontSize: 12, color: _textMuted)),
-    ]);
-  }
-
-  // ── ERROR STATE ───────────────────────────────────
   Widget _buildError() {
     return ListView(children: [
       SizedBox(
@@ -556,8 +512,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.cloud_off_rounded,
-                size: 40, color: _textMuted),
+            Icon(Icons.cloud_off_rounded, size: 40, color: _textMuted),
             const SizedBox(height: 12),
             Text(_error,
                 textAlign: TextAlign.center,
@@ -580,7 +535,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     ]);
   }
 
-  // ── HELPERS ───────────────────────────────────────
   String _timeAgo(DateTime t) {
     final diff = DateTime.now().difference(t);
     if (diff.inMinutes < 1) return 'Just now';
@@ -592,20 +546,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   String _formatFullTime(DateTime t) {
     final p = (int n) => n.toString().padLeft(2, '0');
-    return '${t.day}/${t.month}/${t.year}  '
-        '${p(t.hour)}:${p(t.minute)}:${p(t.second)}';
-  }
-
-  DateTime _parseTimeOrNull(String raw) {
-    try {
-      final clean = raw
-          .replaceAll('Z', '')
-          .replaceAll('+00:00', '')
-          .replaceAll('+03:00', '');
-      return DateTime.parse(clean);
-    } catch (_) {
-      return DateTime.now();
-    }
+    return '${t.day}/${t.month}/${t.year}  ${p(t.hour)}:${p(t.minute)}:${p(t.second)}';
   }
 
   static double _toDouble(dynamic v) {
