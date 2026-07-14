@@ -48,3 +48,31 @@ app.*.map.json
 /android/build/
 build/web/
 build/
+# Flutter/Dart/Pub related
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+
+# Build outputs
+build/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+android/app/build/
+android/build/
+
+# Generated files
+*.log
+*.lock
+*.tmp
+*.swp
+*.swo
+*.DS_Store
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Netlify build outputs (we only want source + netlify_build.sh + netlify.toml)
+node_modules/
