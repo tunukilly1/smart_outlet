@@ -183,7 +183,7 @@ class _EnergyChartWidgetState extends State<EnergyChartWidget> {
           // Fixed Y axis
           SizedBox(
             width: 50,
-            height: 200,
+            height: 170,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -219,7 +219,7 @@ class _EnergyChartWidgetState extends State<EnergyChartWidget> {
                       selectedIndex: _selectedIndex,
                       lineColor: AppColors.primary,
                       fillColor: AppColors.primary
-                          .withOpacity(0.12),
+                          .withValues(alpha: 0.12),
                       gridColor: _borderColor,
                       textColor: _mutedColor,
                       bgColor: _bgColor,
@@ -262,10 +262,10 @@ class _EnergyChartWidgetState extends State<EnergyChartWidget> {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.05),
+          color: AppColors.primary.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-              color: AppColors.primary.withOpacity(0.15)),
+              color: AppColors.primary.withValues(alpha: 0.15)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -285,10 +285,10 @@ class _EnergyChartWidgetState extends State<EnergyChartWidget> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.08),
+        color: AppColors.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-            color: AppColors.primary.withOpacity(0.3)),
+            color: AppColors.primary.withValues(alpha: 0.3)),
       ),
       child: Column(children: [
         Row(
@@ -357,10 +357,10 @@ class _EnergyChartWidgetState extends State<EnergyChartWidget> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.05),
+        color: AppColors.primary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-            color: AppColors.primary.withOpacity(0.15)),
+            color: AppColors.primary.withValues(alpha: 0.15)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -479,7 +479,7 @@ class _InteractiveChartPainter extends CustomPainter {
 
     for (int i = 0; i < points.length; i++) {
       final x = i * step + step / 2;
-      final y = chartH - (points[i].kwh / maxVal * chartH * 0.92);
+      final y = chartH - (points[i].kwh / maxVal * chartH * 0.82);
 
       if (i == 0) {
         linePath.moveTo(x, y);
@@ -488,7 +488,7 @@ class _InteractiveChartPainter extends CustomPainter {
       } else {
         final prevX = (i - 1) * step + step / 2;
         final prevY = chartH -
-            (points[i - 1].kwh / maxVal * chartH * 0.92);
+            (points[i - 1].kwh / maxVal * chartH * 0.82);
         final cpX = (prevX + x) / 2;
         linePath.cubicTo(cpX, prevY, cpX, y, x, y);
         fillPath.cubicTo(cpX, prevY, cpX, y, x, y);
@@ -536,7 +536,7 @@ class _InteractiveChartPainter extends CustomPainter {
           Offset(x, 0),
           Offset(x, chartH),
           Paint()
-            ..color = lineColor.withOpacity(0.3)
+            ..color = lineColor.withValues(alpha: 0.3)
             ..strokeWidth = 1.0
             ..style = PaintingStyle.stroke,
         );
@@ -550,7 +550,7 @@ class _InteractiveChartPainter extends CustomPainter {
             ..style = PaintingStyle.fill);
       canvas.drawCircle(Offset(x, y), dotRadius,
           Paint()
-            ..color = isSelected ? lineColor : lineColor.withOpacity(0.8)
+            ..color = isSelected ? lineColor : lineColor.withValues(alpha: 0.8)
             ..style = PaintingStyle.fill);
 
       // X axis time label every N points

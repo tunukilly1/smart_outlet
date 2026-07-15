@@ -308,6 +308,12 @@ class ApiService {
             options: await _authOptions());
     }
 
+    // POST /api/schedules/{id}/toggle/
+    Future<void> toggleSchedule(int scheduleId) async {
+        await _dio.post('/api/schedules/$scheduleId/toggle/',
+            options: await _authOptions());
+    }
+
     // ── CONTROL LOGS — NEW ────────────────────────────────
 
     // GET /api/control-logs/

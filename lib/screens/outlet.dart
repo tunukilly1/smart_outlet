@@ -233,6 +233,15 @@ class _OutletScreenState extends State<OutletScreen>
   }
 
   String _pad(int n) => n.toString().padLeft(2, '0');
+//-------TOGGLE METHOD--------------------------
+  Future<void> _toggleSchedule(int scheduleId) async {
+    try {
+      await _api.toggleSchedule(scheduleId);
+      await _fetchSchedules();
+    } catch (e) {
+      _showSnack('Failed to toggle schedule', AppColors.red);
+    }
+  }
 
   // ── DELETE SCHEDULE FROM BACKEND ──────────────────────
   Future<void> _deleteSchedule(int scheduleId) async {
@@ -663,6 +672,7 @@ class _OutletScreenState extends State<OutletScreen>
     final surfaceColor = _isDark ? AppColors.surfaceLight : AppColors.lightSurface;
     final borderColor = _isDark ? AppColors.border : AppColors.lightBorder;
 
+    final bool isActive = (schedule['status']?.toString() ?? 'active') == 'active';
     final rawStart = schedule['start_time']?.toString() ?? '';
     final rawEnd = schedule['end_time']?.toString();
     final startTime = rawStart.isNotEmpty ? _formatScheduleTime(rawStart) : null;
@@ -699,7 +709,7 @@ class _OutletScreenState extends State<OutletScreen>
         Container(
           width: 4, height: 52,
           decoration: BoxDecoration(
-            color: AppColors.primary,
+            color: isActive ? AppColors.primary : mutedColor.withValues(alpha: 0.4),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -720,15 +730,28 @@ class _OutletScreenState extends State<OutletScreen>
             ],
           ),
         ),
-        if (scheduleId != null)
+        if (scheduleId != null) ...[
+          Transform.scale(
+            scale: 0.75,
+            child: Switch(
+              value: isActive,
+              activeColor: Colors.white,
+              activeTrackColor: AppColors.primary,
+              inactiveThumbColor: Colors.white,
+              inactiveTrackColor: mutedColor.withValues(alpha: 0.3),
+              trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+              onChanged: (_) => _toggleSchedule(scheduleId),
+            ),
+          ),
           GestureDetector(
             onTap: () => _deleteSchedule(scheduleId),
             child: Padding(
-              padding: const EdgeInsets.only(left: 8, top: 2),
+              padding: const EdgeInsets.only(left: 4, top: 2),
               child: Icon(Icons.delete_outline_rounded,
                   color: AppColors.red, size: 20),
             ),
           ),
+        ],
       ]),
     );
   }

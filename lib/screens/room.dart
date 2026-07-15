@@ -234,9 +234,7 @@ class _RoomScreenState extends State<RoomScreen> {
               label: 'Active', color: AppColors.primary),
           Container(width: 1, height: 36, color: _borderColor),
           _SummaryItem(icon: Icons.electric_meter_rounded,
-                value: _service.isLoading
-                    ? '—'
-                    : '${_service.totalKwh.toStringAsFixed(3)} ',
+              value: '${widget.room.totalKwh.toStringAsFixed(3)}',
               label: 'kWh', color: AppColors.amber),
         ]),
       ),
