@@ -947,14 +947,7 @@ class _DailyBarPainter extends CustomPainter {
               Offset(x + barW / 2 - vTp.width / 2, chartH - barHeight - 11));
         }
 
-        // Dot on top of bar
-        canvas.drawCircle(
-          Offset(x + barW / 2, chartH - barHeight),
-          3.5,
-          Paint()
-            ..color = isToday ? barColor : barColor.withValues(alpha: 0.7)
-            ..style = PaintingStyle.fill,
-        );
+
       } else {
         // Empty day — draw a faint thin bar so the column is always visible
         final emptyPaint = Paint()
@@ -964,9 +957,9 @@ class _DailyBarPainter extends CustomPainter {
         final rect = RRect.fromRectAndCorners(
           Rect.fromLTWH(
             x + barPad,
-            chartH - 6,
+            chartH - 2,
             barW - barPad * 2,
-            6,
+            2,
           ),
           topLeft: const Radius.circular(3),
           topRight: const Radius.circular(3),

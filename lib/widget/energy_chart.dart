@@ -90,10 +90,25 @@ class _EnergyChartWidgetState extends State<EnergyChartWidget> {
   bool get _hasData =>
       _points.isNotEmpty || widget.hourlyData.any((v) => v > 0);
 
-  double get _maxKwh {
+ /* double get _maxKwh {
     if (_points.isEmpty) return 1.0;
     return _points.map((p) => p.kwh).reduce(
             (a, b) => a > b ? a : b);
+  }*/
+  double get _maxKwh {
+    if (_points.isEmpty) return 1.0;
+
+    final maxValue = _points.map((e) => e.kwh).reduce((a, b) => a > b ? a : b);
+
+    if (maxValue <= 0.01) {
+      return (maxValue * 1000).ceil() / 1000;
+    }
+
+    if (maxValue <= 0.1) {
+      return (maxValue * 100).ceil() / 100;
+    }
+
+    return (maxValue * 10).ceil() / 10;
   }
 
   double get _totalKwh =>
@@ -103,7 +118,7 @@ class _EnergyChartWidgetState extends State<EnergyChartWidget> {
   double get _chartWidth {
     final count = _points.length;
     if (count <= 10) return 300;
-    return (count * 28.0).clamp(300.0, 5000.0);
+    return (count * 40.0).clamp(300.0, 5000.0);
   }
 
   static double _toDouble(dynamic v) {
@@ -181,7 +196,9 @@ class _EnergyChartWidgetState extends State<EnergyChartWidget> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Fixed Y axis
-          SizedBox(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 30),
+          child: SizedBox(
             width: 50,
             height: 170,
             child: Column(
@@ -196,6 +213,7 @@ class _EnergyChartWidgetState extends State<EnergyChartWidget> {
               ],
             ),
           ),
+        ),
           const SizedBox(width: 6),
           // Scrollable chart
           Expanded(
@@ -462,6 +480,9 @@ class _InteractiveChartPainter extends CustomPainter {
 
     final step = size.width / points.length;
     final chartH = size.height - 30; // Reserve 30px for X labels
+    const double topPadding = 8.0;
+    final usableHeight = chartH - topPadding;
+
 
     // ── GRID LINES ──────────────────────────────────────
     final gridPaint = Paint()
@@ -479,7 +500,8 @@ class _InteractiveChartPainter extends CustomPainter {
 
     for (int i = 0; i < points.length; i++) {
       final x = i * step + step / 2;
-      final y = chartH - (points[i].kwh / maxVal * chartH * 0.82);
+      final y = topPadding +
+          (1 - (points[i].kwh / maxVal)) * usableHeight;
 
       if (i == 0) {
         linePath.moveTo(x, y);
@@ -487,11 +509,16 @@ class _InteractiveChartPainter extends CustomPainter {
         fillPath.lineTo(x, y);
       } else {
         final prevX = (i - 1) * step + step / 2;
-        final prevY = chartH -
-            (points[i - 1].kwh / maxVal * chartH * 0.82);
+        final prevY = topPadding +
+            (1 - (points[i - 1].kwh / maxVal)) * usableHeight;
+       /* final prevY = chartH -
+            (points[i - 1].kwh / maxVal * chartH * 0.90);*/
         final cpX = (prevX + x) / 2;
-        linePath.cubicTo(cpX, prevY, cpX, y, x, y);
-        fillPath.cubicTo(cpX, prevY, cpX, y, x, y);
+        final controlX = (prevX + x) / 2;
+        final controlY = (prevY + y) / 2;
+
+        linePath.quadraticBezierTo(controlX, controlY, x, y);
+        fillPath.quadraticBezierTo(controlX, controlY, x, y);
       }
     }
     fillPath.lineTo(
@@ -526,8 +553,8 @@ class _InteractiveChartPainter extends CustomPainter {
 
     for (int i = 0; i < points.length; i++) {
       final x = i * step + step / 2;
-      final y = chartH -
-          (points[i].kwh / maxVal * chartH * 0.92);
+      final y = topPadding +
+          (1 - (points[i].kwh / maxVal)) * usableHeight;
       final isSelected = selectedIndex == i;
 
       // Selected point vertical line
