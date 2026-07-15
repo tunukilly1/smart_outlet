@@ -328,7 +328,7 @@ class _EnergyScreenState extends State<EnergyScreen> {
             // Fixed Y-axis
             SizedBox(
               width: 46,
-              height: 160,
+              height: 130,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.end,
