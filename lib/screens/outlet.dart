@@ -1049,9 +1049,7 @@ class _OutletScreenState extends State<OutletScreen>
                   Row(
                     children: [
                       {'label': 'Daily', 'value': 'daily'},
-                      {'label': 'Weekly', 'value': 'weekly'},
-                      {'label': 'Once', 'value': 'once'},
-                      {'label': 'None', 'value': ''},
+                      {'label': 'None', 'value': 'none'},
                     ].map((opt) {
                       final selected = repeatPattern == opt['value'];
                       return Expanded(
