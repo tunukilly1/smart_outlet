@@ -224,7 +224,7 @@ class _EnergyScreenState extends State<EnergyScreen> {
   // ── SUMMARY CARD ─────────────────────────────────
   Widget _summaryCard() {
     final avg = _totalKwhMonth / 30;
-   // final cost = _totalKwhMonth * _ratePerKwh;
+    // final cost = _totalKwhMonth * _ratePerKwh;
     return Container(
       margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
       padding: const EdgeInsets.all(20),
@@ -244,9 +244,9 @@ class _EnergyScreenState extends State<EnergyScreen> {
         Text('${_totalKwhMonth.toStringAsFixed(2)} kWh',
             style: const TextStyle(fontSize: 36,
                 fontWeight: FontWeight.w800, color: Colors.white)),
-     //   const SizedBox(height: 4),
-       // Text('Est. cost: Tsh ${cost.toStringAsFixed(0)}',
-            //style: const TextStyle(fontSize: 13, color: Colors.white70)),
+        //   const SizedBox(height: 4),
+        // Text('Est. cost: Tsh ${cost.toStringAsFixed(0)}',
+        //style: const TextStyle(fontSize: 13, color: Colors.white70)),
         const SizedBox(height: 16),
         Row(children: [
           _chip(Icons.trending_up_rounded,
@@ -602,7 +602,7 @@ class _EnergyScreenState extends State<EnergyScreen> {
                       fontWeight: FontWeight.w700,
                       color: AppColors.primary)),
               //Text('Tsh ${dev.cost.toStringAsFixed(0)}',
-                 // style: TextStyle(fontSize: 11, color: _textMuted)),
+              // style: TextStyle(fontSize: 11, color: _textMuted)),
             ]),
           ]),
           const SizedBox(height: 10),
@@ -957,9 +957,9 @@ class _DailyBarPainter extends CustomPainter {
         final rect = RRect.fromRectAndCorners(
           Rect.fromLTWH(
             x + barPad,
-            chartH - 2,
+            chartH - 6,
             barW - barPad * 2,
-            2,
+            6,
           ),
           topLeft: const Radius.circular(3),
           topRight: const Radius.circular(3),
@@ -1005,7 +1005,7 @@ class _DeviceEnergy {
     required this.name,
     required this.room,
     required this.kwh,
-   // required this.cost,
+    // required this.cost,
     required this.peakWatts,
   });
 }
@@ -1021,3 +1021,4 @@ class _DayData {
     required this.kwh,
   });
 }
+
