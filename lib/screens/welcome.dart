@@ -119,8 +119,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                             children: [
                               const TextSpan(text: 'Control your home\n'),
                               const TextSpan(
-                                text: 'smarter',
-                                style: TextStyle(color: AppColors.primary),
+                                text: 'Smarter',
+                                //style: TextStyle(color: AppColors.primary),
                               ),
                             ],
                           ),
