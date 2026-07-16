@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import '../theme/theme.dart';
 import 'welcome.dart';
 import 'notifications.dart';
+import 'pin_setup.dart';
 import 'edit_profile_screen.dart';
 import '../services/auth.dart';
+
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -107,7 +109,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         iconColor: AppColors.purple,
                         label: 'Security',
                         subtitle: 'PIN & biometrics',
-                        onTap: () => _showComingSoon('Security'),
+                        onTap: () => Navigator .push(context,
+                          MaterialPageRoute(builder: (_) => const PinSetupScreen())
+                        ),
                       ),
                     ]),
 

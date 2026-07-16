@@ -142,6 +142,7 @@ class ThemeProvider extends ChangeNotifier {
   bool _isLight = true;
 
   bool get isLight => _isLight;
+  bool get isDark => !_isLight;
 
   void toggleTheme() {
     _isLight = !_isLight;

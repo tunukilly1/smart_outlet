@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/theme.dart';
 import '../services/auth.dart';
 import 'welcome.dart';
 import 'home.dart';
+import 'auth_gate.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -59,18 +61,34 @@ class _SplashScreenState extends State<SplashScreen>
     final isLoggedIn = await authService.checkAuth();
     await authService.loadUserFromToken();
     await authService.loadSavedProfile();
+
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) =>
-        isLoggedIn ? const HomeScreen() : const WelcomeScreen(),
-        transitionsBuilder: (_, animation, __, child) =>
-            FadeTransition(opacity: animation, child: child),
-        transitionDuration: const Duration(milliseconds: 500),
-      ),
-    );
+
+    if (isLoggedIn) {
+      // Check if PIN is set
+      final prefs = await SharedPreferences.getInstance();
+      final hasPin = (prefs.getString('app_pin') ?? '').isNotEmpty;
+      final hasBiometric =
+          prefs.getBool('biometric_enabled') ?? false;
+
+      if (hasPin || hasBiometric) {
+        // Show PIN/biometric gate before home
+        Navigator.pushReplacement(context,
+            MaterialPageRoute(
+                builder: (_) => const AuthGateScreen()));
+      } else {
+        Navigator.pushReplacement(context,
+            MaterialPageRoute(
+                builder: (_) => const HomeScreen()));
+      }
+    } else {
+      Navigator.pushReplacement(context,
+          MaterialPageRoute(
+              builder: (_) => const WelcomeScreen()));
+    }
   }
+
+
 
 
   @override
